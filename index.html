@@ -4,9 +4,14 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>坂道系列 選拔名單</title>
+<link rel="manifest" href="manifest.json">
+<meta name="theme-color" content="#0e0818">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="坂道選拔">
 <style>
 *{box-sizing:border-box;margin:0;padding:0;}
-body{font-family:'Segoe UI',sans-serif;background:#0e0818;color:#f0e6ff;min-height:100vh;}
+body{font-family:'Segoe UI',sans-serif;background:#0e0818;color:#f0e6ff;min-height:100vh;cursor:pointer;}
 .top-bar{background:#090513;border-bottom:2px solid #1e1e1e;position:sticky;top:0;z-index:800;}
 .tab-wrap{display:flex;border-bottom:1px solid #1a1a2e;}
 .tab-btn{flex:1;padding:12px 4px;font-size:.82rem;font-weight:700;letter-spacing:.5px;cursor:pointer;border:none;background:transparent;border-bottom:3px solid transparent;transition:all .22s;white-space:nowrap;text-align:center;}
@@ -222,14 +227,14 @@ body{font-family:'Segoe UI',sans-serif;background:#0e0818;color:#f0e6ff;min-heig
 
 <div class="top-bar">
   <div class="tab-wrap">
-    <button class="tab-btn nogi active" onclick="switchGroup('nogi')">🟣 乃木坂46</button>
-    <button class="tab-btn hinata" onclick="switchGroup('hinata')">🔵 日向坂46</button>
-    <button class="tab-btn sakura" onclick="switchGroup('sakura')">⬜ 櫻坂46</button>
+    <button class="tab-btn nogi active" id="tab-nogi">🟣 乃木坂46</button>
+    <button class="tab-btn hinata" id="tab-hinata">🔵 日向坂46</button>
+    <button class="tab-btn sakura" id="tab-sakura">⬜ 櫻坂46</button>
   </div>
   <div class="top-btns">
-    <button class="top-btn" onclick="openAddModal()">＋ 新增</button>
-    <button class="top-btn" onclick="openManageModal()">🗑 刪除</button>
-    <button class="top-btn" onclick="toggleRankPanel()">🏆 排行榜</button>
+    <button class="top-btn" id="btn-add">＋ 新增</button>
+    <button class="top-btn" id="btn-del">🗑 刪除</button>
+    <button class="top-btn" id="btn-rank">🏆 排行榜</button>
   </div>
 </div>
 
@@ -348,8 +353,8 @@ body{font-family:'Segoe UI',sans-serif;background:#0e0818;color:#f0e6ff;min-heig
     </div>
     <div id="a-msg" class="mmsg"></div>
     <div class="mbtns">
-      <button class="btn-save" onclick="doAdd()">✚ 新增</button>
-      <button class="btn-cancel" onclick="closeModal('addModal')">取消</button>
+      <button class="btn-save" id="btn-do-add">✚ 新增</button>
+      <button class="btn-cancel" id="btn-cancel-add">取消</button>
     </div>
   </div>
 </div>
@@ -386,8 +391,8 @@ body{font-family:'Segoe UI',sans-serif;background:#0e0818;color:#f0e6ff;min-heig
     </div>
     <div id="e-msg" class="mmsg"></div>
     <div class="mbtns">
-      <button class="btn-save" onclick="doSaveEdit()">💾 儲存</button>
-      <button class="btn-cancel" onclick="closeModal('editModal')">取消</button>
+      <button class="btn-save" id="btn-do-edit">💾 儲存</button>
+      <button class="btn-cancel" id="btn-cancel-edit">取消</button>
     </div>
   </div>
 </div>
@@ -407,8 +412,8 @@ body{font-family:'Segoe UI',sans-serif;background:#0e0818;color:#f0e6ff;min-heig
     <div class="manage-list" id="manage-list"></div>
     <div id="m-msg" class="mmsg"></div>
     <div class="mbtns" style="justify-content:space-between;align-items:center;">
-      <button class="btn-cancel" onclick="closeModal('manageModal')">關閉</button>
-      <button id="clear-all-btn" onclick="clearAllStep()" style="background:rgba(239,68,68,.12);border:1px solid #ef4444;color:#fca5a5;border-radius:8px;padding:10px 16px;font-size:.8rem;cursor:pointer;">🗑 清除所有自訂資料</button>
+      <button class="btn-cancel" id="btn-cancel-manage">關閉</button>
+      <button id="btn-clear-all" style="background:rgba(239,68,68,.12);border:1px solid #ef4444;color:#fca5a5;border-radius:8px;padding:10px 16px;font-size:.8rem;cursor:pointer;">🗑 清除所有自訂資料</button>
     </div>
   </div>
 </div>
@@ -619,6 +624,14 @@ const keyakiBase=[
 const overrides={};
 const addedData={nogi:[],hinata:[],sakura:[],keyaki:[]};
 
+const API_URL='';
+
+// 從 Google Sheets 載入資料（已停用）
+async function loadFromSheets(){}
+
+// 儲存資料到 Google Sheets（已停用）
+async function saveToSheets(){}
+
 function saveAdded(){
   try{localStorage.setItem('sakamichi_v3',JSON.stringify(addedData));}catch(e){}
 }
@@ -782,7 +795,11 @@ function renderG(g){
   if(rankPanelOpen)buildRankTable();
 }
 
-// 初始化
+// 按鈕事件綁定
+document.getElementById('btn-add').addEventListener('click',openAddModal);
+document.getElementById('btn-del').addEventListener('click',openManageModal);
+document.getElementById('btn-rank').addEventListener('click',toggleRankPanel);
+
 loadAdded();
 renderG('nogi');renderG('hinata');renderG('sakura');renderG('keyaki');
 
@@ -940,6 +957,12 @@ function refreshManageList(){
       showMsg('m-msg','ok','已刪除。',true);
     });
     item.append(sp,btn); list.appendChild(item);
+  });
+}
+// Service Worker 取消註冊
+if('serviceWorker' in navigator){
+  navigator.serviceWorker.getRegistrations().then(regs=>{
+    regs.forEach(r=>r.unregister());
   });
 }
 </script>
