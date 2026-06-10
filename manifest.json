@@ -1,7 +1,7 @@
 {
   "name": "坂道選拔名單",
   "short_name": "坂道",
-  "start_url": "./sakamichi_selection.html",
+  "start_url": "/sakamichi/",
   "display": "standalone",
   "background_color": "#0e0818",
   "theme_color": "#0e0818",
