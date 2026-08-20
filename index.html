@@ -297,6 +297,24 @@ body{font-family:'Segoe UI',sans-serif;background:#0e0818;color:#f0e6ff;min-heig
 .pk-note{font-size:.72rem;color:#5a4070;margin-top:6px;}
 .pk-note b{color:#c084fc;font-weight:700;}
 
+/* ── 成員名冊 ── */
+.rs-list{max-height:52vh;overflow-y:auto;border:1px solid #2a1250;border-radius:8px;}
+.rs-gen{padding:7px 13px;font-size:.74rem;font-weight:700;color:#c084fc;background:#0a0520;position:sticky;top:0;letter-spacing:.5px;border-bottom:1px solid #2a1250;}
+.rs-item{display:flex;align-items:center;gap:9px;padding:9px 13px;border-bottom:1px solid #1e0d3a;font-size:.82rem;}
+.rs-item:last-child{border-bottom:none;}
+.rs-item:hover{background:#1e0d3a;}
+.rs-name{color:#e9d5ff;font-weight:700;flex-shrink:0;}
+.rs-meta{color:#7c5cb0;font-size:.72rem;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+.rs-btns{display:flex;gap:5px;flex-shrink:0;}
+.rs-btn{background:rgba(168,85,247,.12);border:1px solid #4a2d7a;color:#c084fc;border-radius:5px;padding:3px 9px;font-size:.74rem;cursor:pointer;}
+.rs-btn:hover{background:rgba(168,85,247,.28);color:#e9d5ff;}
+.rs-btn.danger{background:rgba(239,68,68,.1);border-color:#7f1d1d;color:#f87171;}
+.rs-btn.danger:hover{background:rgba(239,68,68,.25);}
+.rs-badge{font-size:.66rem;padding:1px 7px;border-radius:9px;flex-shrink:0;}
+.rs-grad{background:rgba(148,163,184,.12);border:1px solid #475569;color:#94a3b8;}
+.rs-active{background:rgba(34,197,94,.12);border:1px solid #22c55e;color:#86efac;}
+.rs-custom{background:rgba(251,191,36,.12);border:1px solid #b45309;color:#fbbf24;}
+
 /* ── 成員編輯 Modal ── */
 #memberEditModal .modal-box{max-width:360px;}
 .me-field{display:flex;flex-direction:column;gap:4px;margin-bottom:12px;}
@@ -328,7 +346,7 @@ body{font-family:'Segoe UI',sans-serif;background:#0e0818;color:#f0e6ff;min-heig
     <button class="top-btn" onclick="openManageModal()">🗑 刪除</button>
     <button class="top-btn" onclick="openGlobalSearch()">🔍 跨組</button>
     <button class="top-btn" onclick="toggleRankPanel()">🏆 排行榜</button>
-    <button class="top-btn" onclick="openAddMember()">👤 成員</button>
+    <button class="top-btn" onclick="openRoster()">👤 成員</button>
   </div>
 </div>
 
@@ -459,6 +477,30 @@ body{font-family:'Segoe UI',sans-serif;background:#0e0818;color:#f0e6ff;min-heig
     </div>
     <div id="mp-rec-hdr" style="padding:7px 14px 4px;font-size:.72rem;color:#7c5cb0;font-weight:700;letter-spacing:.5px;"></div>
     <div id="mp-rec-list"></div>
+  </div>
+</div>
+
+<!-- 成員名冊 Modal -->
+<div class="modal" id="rosterModal">
+  <div class="modal-box">
+    <h2>👤 成員名冊</h2>
+    <div class="modal-sub" id="rs-sub">依期別列出所有成員，可編輯或刪除</div>
+    <div class="mr" style="margin-bottom:10px;"><label>選擇團體</label>
+      <select id="rs-group" onchange="refreshRoster()">
+        <option value="nogi">乃木坂46</option>
+        <option value="hinata">日向坂46</option>
+        <option value="sakura">櫻坂46</option>
+        <option value="keyaki">欅坂46</option>
+        <option value="aoba">青葉坂46</option>
+      </select>
+    </div>
+    <div class="mr" style="margin-bottom:10px;"><input type="text" id="rs-search" placeholder="🔍 搜尋成員姓名…"></div>
+    <div class="rs-list" id="rs-list"></div>
+    <div id="rs-msg" class="mmsg"></div>
+    <div class="mbtns" style="justify-content:space-between;">
+      <button class="btn-cancel" onclick="closeModal('rosterModal')">關閉</button>
+      <button class="btn-save" onclick="openAddMember()">＋ 新增成員</button>
+    </div>
   </div>
 </div>
 
@@ -1205,12 +1247,74 @@ const memberDB={
   aoba:{}
 };
 
-// ── 成員資料覆蓋（localStorage 持久化）──
-function loadMemberOverrides(){
+// ── 成員資料覆蓋（Firestore 同步，localStorage 為離線後援）──
+const MEM_COL='members';
+let memberOv={};                 // {group:{name:{bday,joined,gen,grad}}}
+let memberOvReady=false;
+function localOverrides(){
   try{return JSON.parse(localStorage.getItem('memberOverrides')||'{}');}catch(e){return {};}
 }
-function saveMemberOverrides(ov){
-  localStorage.setItem('memberOverrides',JSON.stringify(ov));
+function cacheOverrides(ov){
+  try{localStorage.setItem('memberOverrides',JSON.stringify(ov));}catch(e){}
+}
+// 同步讀取：雲端就緒用雲端，否則用本機快取
+function loadMemberOverrides(){
+  return memberOvReady?memberOv:localOverrides();
+}
+function memberDocId(g,name){return g+'__'+name;}
+function saveMemberDoc(g,name,data){
+  if(db)return db.collection(MEM_COL).doc(memberDocId(g,name)).set({g,name,...data});
+  const ov=localOverrides(); (ov[g]=ov[g]||{})[name]=data; cacheOverrides(ov);
+  memberOv=ov; onMembersChanged(); return Promise.resolve();
+}
+function deleteMemberDoc(g,name){
+  if(db)return db.collection(MEM_COL).doc(memberDocId(g,name)).delete();
+  const ov=localOverrides(); if(ov[g])delete ov[g][name]; cacheOverrides(ov);
+  memberOv=ov; onMembersChanged(); return Promise.resolve();
+}
+// 成員資料變動後，刷新正在顯示的畫面
+function onMembersChanged(){
+  if(memberPanelOpen&&mpState.g&&mpState.name)openMemberPanel(mpState.g,mpState.name);
+  const roster=document.getElementById('rosterModal');
+  if(roster&&roster.classList.contains('open'))refreshRoster();
+  // 選擇器只更新可選清單，不動已選內容
+  ['a-','e-'].forEach(pre=>pickerFields(pre).forEach(f=>refreshPickerNames(f)));
+}
+// 舊版資料搬遷：把本機既有的成員覆蓋上傳一次
+function migrateMemberOverrides(){
+  if(!db||localStorage.getItem('memberOverridesMigrated'))return;
+  const local=localOverrides();
+  const ops=[];
+  Object.entries(local).forEach(([g,members])=>{
+    Object.entries(members||{}).forEach(([name,data])=>{
+      if(!(memberOv[g]||{})[name])ops.push(saveMemberDoc(g,name,data));
+    });
+  });
+  Promise.all(ops)
+    .then(()=>{localStorage.setItem('memberOverridesMigrated','1');
+      if(ops.length)console.info('已將',ops.length,'筆成員資料搬移到雲端');})
+    .catch(e=>console.warn('成員資料搬移失敗',e));
+}
+if(db){
+  db.collection(MEM_COL).onSnapshot(snap=>{
+    const next={};
+    snap.forEach(d=>{
+      const v=d.data()||{}; const g=v.g, name=v.name;
+      if(!g||!name)return;
+      const{g:_g,name:_n,...rest}=v;
+      (next[g]=next[g]||{})[name]=rest;
+    });
+    memberOv=next; memberOvReady=true;
+    // 先搬遷再寫快取：migrate 需要讀到尚未被覆寫的舊 localStorage 資料
+    migrateMemberOverrides();
+    cacheOverrides(next);
+    onMembersChanged();
+  },err=>{
+    console.warn('Firestore members',err);
+    memberOv=localOverrides(); memberOvReady=true; onMembersChanged();
+  });
+} else {
+  memberOv=localOverrides(); memberOvReady=true;
 }
 function getMemberInfo(g,name){
   const ov=loadMemberOverrides();
@@ -1222,6 +1326,7 @@ function getMemberInfo(g,name){
 
 // ── 成員編輯 Modal ──
 let meState={mode:'add',g:'nogi',name:''};
+document.getElementById('rs-search').addEventListener('input',debounce(()=>refreshRoster(),250));
 function openAddMember(){
   const h=location.hash.slice(1);
   const g=['nogi','hinata','sakura','keyaki','aoba'].includes(h)?h:'nogi';
@@ -1266,20 +1371,93 @@ function saveMemEdit(){
     grad:document.getElementById('me-grad').value||undefined,
   };
   Object.keys(data).forEach(k=>data[k]===undefined&&delete data[k]);
-  const ov=loadMemberOverrides();
-  if(!ov[g])ov[g]={};
-  ov[g][name]=data;
-  saveMemberOverrides(ov);
-  closeModal('memberEditModal');
-  if(memberPanelOpen&&mpState.g===g&&mpState.name===name)openMemberPanel(g,name);
+  saveMemberDoc(g,name,data)
+    .then(()=>{closeModal('memberEditModal');onMembersChanged();})
+    .catch(e=>alert('儲存失敗：'+e.message));
 }
 function restoreMemDefault(){
   const{g,name}=meState;
-  const ov=loadMemberOverrides();
-  if(ov[g])delete ov[g][name];
-  saveMemberOverrides(ov);
-  closeModal('memberEditModal');
-  if(memberPanelOpen&&mpState.g===g&&mpState.name===name)openMemberPanel(g,name);
+  deleteMemberDoc(g,name)
+    .then(()=>{closeModal('memberEditModal');onMembersChanged();})
+    .catch(e=>alert('還原失敗：'+e.message));
+}
+// 是否為使用者自行新增的成員（不在內建名冊裡）
+function isCustomMember(g,name){return !((memberDB[g]||{})[name]);}
+
+// ── 成員名冊 ──
+function openRoster(){
+  const h=location.hash.slice(1);
+  document.getElementById('rs-group').value=['nogi','hinata','sakura','keyaki','aoba'].includes(h)?h:'nogi';
+  document.getElementById('rs-search').value='';
+  document.getElementById('rs-msg').style.display='none';
+  refreshRoster(); openModal('rosterModal');
+}
+function refreshRoster(){
+  const g=document.getElementById('rs-group').value;
+  const q=(document.getElementById('rs-search').value||'').trim().toLowerCase();
+  const list=document.getElementById('rs-list'); list.innerHTML='';
+  const all=getAllMembers(g);
+  let names=Object.keys(all);
+  if(q)names=names.filter(n=>n.toLowerCase().includes(q));
+  document.getElementById('rs-sub').textContent=
+    '共 '+Object.keys(all).length+' 位成員'+(q?('，符合 '+names.length+' 位'):'')+'　·　資料儲存於雲端，跨裝置同步';
+  if(!names.length){
+    const d=document.createElement('div'); d.className='rs-item';
+    d.style.cssText='justify-content:center;color:#64748b;';
+    d.textContent=q?'找不到符合的成員':'此團尚無成員資料';
+    list.appendChild(d); return;
+  }
+  const byGen={};
+  names.forEach(n=>{const gen=all[n].gen===undefined?'?':all[n].gen;(byGen[gen]=byGen[gen]||[]).push(n);});
+  Object.keys(byGen).sort((a,b)=>(a==='?'?99:Number(a))-(b==='?'?99:Number(b))).forEach(gen=>{
+    const hdr=document.createElement('div'); hdr.className='rs-gen';
+    hdr.textContent=(gen==='?'?'未設定期別':genLabel(gen))+'（'+byGen[gen].length+'）';
+    list.appendChild(hdr);
+    byGen[gen].sort((a,b)=>a.localeCompare(b,'ja')).forEach(name=>{
+      const info=all[name]||{};
+      const item=document.createElement('div'); item.className='rs-item';
+      const nm=document.createElement('span'); nm.className='rs-name'; nm.textContent=name;
+      const st=document.createElement('span');
+      st.className='rs-badge '+(info.grad?'rs-grad':'rs-active');
+      st.textContent=info.grad?'已畢業':'現役';
+      const meta=document.createElement('span'); meta.className='rs-meta';
+      const bits=[];
+      if(info.bday)bits.push('生日 '+fmtDate(info.bday));
+      if(info.joined)bits.push('入團 '+fmtDate(info.joined));
+      if(info.grad)bits.push('畢業 '+fmtDate(info.grad));
+      meta.textContent=bits.join('　·　')||'（無詳細資料）';
+      const btns=document.createElement('div'); btns.className='rs-btns';
+      const eb=document.createElement('button'); eb.className='rs-btn'; eb.textContent='✏️ 編輯';
+      eb.addEventListener('click',()=>openMemberEdit(g,name));
+      btns.appendChild(eb);
+      const custom=isCustomMember(g,name);
+      const overridden=!!((loadMemberOverrides()[g]||{})[name]);
+      if(custom||overridden){
+        const db_=document.createElement('button');
+        db_.className='rs-btn danger';
+        db_.textContent=custom?'🗑 刪除':'↩ 還原';
+        db_.addEventListener('click',()=>{
+          if(db_.dataset.confirm!=='1'){
+            db_.dataset.confirm='1';
+            db_.textContent='⚠️ 確認？';
+            setTimeout(()=>{if(db_.dataset.confirm==='1'){db_.dataset.confirm='';db_.textContent=custom?'🗑 刪除':'↩ 還原';}},3000);
+            return;
+          }
+          deleteMemberDoc(g,name)
+            .then(()=>{showMsg('rs-msg','ok',custom?('已刪除「'+name+'」。'):('已還原「'+name+'」為預設資料。'),true);refreshRoster();})
+            .catch(e=>showMsg('rs-msg','err','操作失敗：'+e.message,false));
+        });
+        btns.appendChild(db_);
+      }
+      if(custom){
+        const cb=document.createElement('span'); cb.className='rs-badge rs-custom'; cb.textContent='自訂';
+        item.append(nm,st,cb,meta,btns);
+      } else {
+        item.append(nm,st,meta,btns);
+      }
+      list.appendChild(item);
+    });
+  });
 }
 
 // ── 成員面板 ──
@@ -1556,12 +1734,12 @@ if(!db){['nogi','hinata','sakura','keyaki','aoba'].forEach(g=>renderG(g));}
 
 function closeModal(id){document.getElementById(id).classList.remove('open');}
 function openModal(id){document.getElementById(id).classList.add('open');}
-['addModal','editModal','manageModal','gSearchModal','memberEditModal'].forEach(id=>{
+['addModal','editModal','manageModal','gSearchModal','memberEditModal','rosterModal'].forEach(id=>{
   document.getElementById(id).addEventListener('click',function(e){if(e.target===this)closeModal(id);});
 });
 document.addEventListener('keydown',e=>{
   if(e.key==='Escape'){
-    ['addModal','editModal','manageModal','gSearchModal','memberEditModal'].forEach(id=>closeModal(id));
+    ['addModal','editModal','manageModal','gSearchModal','memberEditModal','rosterModal'].forEach(id=>closeModal(id));
     if(rankPanelOpen)toggleRankPanel();
     if(memberPanelOpen)closeMemberPanel();
   }
