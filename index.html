@@ -855,7 +855,7 @@ async function seedDatabase(){
   try{
     const batch=db.batch();
     let count=0;
-    ['nogi','hinata','sakura','keyaki'].forEach(g=>{
+    ['nogi','hinata','sakura','keyaki','aoba'].forEach(g=>{
       getBase(g).forEach(entry=>{
         const ref=db.collection(g).doc(String(entry.num));
         batch.set(ref,toDoc({...entry}));count++;
@@ -1584,7 +1584,7 @@ function doAdd(){
   const center=parseCSV(document.getElementById('a-center').value);
   if(!num||!title||!date||!center.length){showMsg('a-msg','err','請填寫所有必填欄位',false);return;}
   if(getData(g).find(d=>d.num===num)){showMsg('a-msg','err','第'+num+'張已存在！',false);return;}
-  let entry={num,title,zh,date,center};
+  let entry={num,title,zh,date,center,custom:true};
   if(g==='nogi'){
     const fukujin=parseCSV(document.getElementById('a-fukujin').value);
     if(!fukujin.length){showMsg('a-msg','err','請填寫福神成員',false);return;}
@@ -1725,7 +1725,7 @@ function clearAllStep(){
     clearStep=0;
     if(!db){showMsg('m-msg','err','Firebase 未設定。',false);return;}
     const deletes=[];
-    ['nogi','hinata','sakura','keyaki'].forEach(g=>{
+    ['nogi','hinata','sakura','keyaki','aoba'].forEach(g=>{
       (liveData[g]||[]).filter(d=>d.custom).forEach(d=>{
         deletes.push(db.collection(g).doc(String(d.num)).delete());
       });
