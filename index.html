@@ -31,6 +31,7 @@ body{font-family:'Segoe UI',sans-serif;background:#0e0818;color:#f0e6ff;min-heig
 .tab-btn.aoba{color:#22d3ee;}
 .tab-btn.aoba.active{color:#cffafe;border-bottom-color:#06b6d4;background:rgba(6,182,212,.08);}
 .tab-btn:hover{opacity:.78;}
+@media(max-width:430px){.tab-btn{padding:12px 1px;font-size:.75rem;letter-spacing:0;}}
 .top-btns{display:flex;gap:6px;padding:7px 10px;}
 .top-btn{flex:1;text-align:center;background:rgba(148,163,184,.15);border:1px solid #475569;color:#94a3b8;padding:7px 10px;border-radius:7px;font-size:.78rem;cursor:pointer;white-space:nowrap;transition:all .2s;}
 .top-btn:hover{background:rgba(148,163,184,.25);color:#e2e8f0;}
@@ -116,7 +117,7 @@ body{font-family:'Segoe UI',sans-serif;background:#0e0818;color:#f0e6ff;min-heig
 /* ── Grid / Cards ── */
 .grid{padding:10px 12px;display:grid;grid-template-columns:1fr;gap:10px;}
 @media(min-width:560px){.grid{grid-template-columns:repeat(auto-fill,minmax(305px,1fr));padding:14px 20px;gap:12px;}}
-.card{border-radius:12px;padding:12px;transition:transform .2s,box-shadow .2s;display:flex;flex-direction:column;}
+.card{border-radius:12px;padding:12px;transition:transform .2s,box-shadow .2s;display:flex;flex-direction:column;min-width:0;}
 .card:hover{transform:translateY(-2px);}
 .card-nogi{background:#180930;border:1px solid #2a1250;}
 .card-nogi:hover{box-shadow:0 6px 22px rgba(147,51,234,.18);}
@@ -296,6 +297,15 @@ body{font-family:'Segoe UI',sans-serif;background:#0e0818;color:#f0e6ff;min-heig
 .pk-chip button:hover{background:rgba(239,68,68,.3);color:#fca5a5;}
 .pk-note{font-size:.72rem;color:#5a4070;margin-top:6px;}
 .pk-note b{color:#c084fc;font-weight:700;}
+
+/* ── 站位圖 ── */
+.fm{overflow-x:auto;padding:3px 0 1px;margin-bottom:8px;}
+.fm-inner{display:flex;flex-direction:column;gap:5px;min-width:max-content;}
+.fm-row{display:flex;align-items:center;gap:7px;}
+.fm-lbl{width:26px;flex-shrink:0;font-size:.6rem;letter-spacing:.5px;text-align:right;opacity:.7;}
+.fm-tags{display:flex;gap:4px;flex:1;justify-content:center;}
+.fm .tag{font-size:.73rem;padding:4px 8px;white-space:nowrap;}
+.fm-note{font-size:.68rem;color:#5a4070;margin:2px 0 8px;padding-left:33px;}
 
 /* ── 備份 / 還原 ── */
 .bk-desc{font-size:.78rem;color:#9370c0;line-height:1.7;margin-bottom:10px;}
@@ -1660,6 +1670,32 @@ function makeTag(name,cls,label,g){
 }
 function applyHl(sp,s,name){if(hl(s,name))sp.classList.add('hl');}
 
+// 依 rows 畫出真實站位（rows[0]=後排 … rows[2]=前排，陣列順序即舞台左右順序）
+function hasFormation(d){return Array.isArray(d.rows)&&d.rows.some(r=>Array.isArray(r)&&r.length);}
+function buildFormation(d,g,opt){
+  const s=S[g];
+  const wrap=document.createElement('div'); wrap.className='fm';
+  const inner=document.createElement('div'); inner.className='fm-inner';
+  // 後排在上、前排在下，與實際舞台一致
+  [0,1,2].forEach(ri=>{
+    const row=(d.rows||[])[ri]||[];
+    if(!row.length)return;
+    const line=document.createElement('div'); line.className='fm-row';
+    const lbl=document.createElement('span');
+    lbl.className='fm-lbl '+opt.rlCls; lbl.textContent=opt.labels[ri];
+    const tags=document.createElement('div'); tags.className='fm-tags';
+    row.forEach(name=>{
+      const isC=(d.center||[]).includes(name);
+      const cLabel=isC&&d.centerLabel?d.centerLabel[d.center.indexOf(name)]:name;
+      const sp=makeTag(name,isC?opt.centerCls:opt.rowCls[ri],(isC?'★ ':'')+cLabel,g);
+      applyHl(sp,s,name); tags.appendChild(sp);
+    });
+    line.append(lbl,tags); inner.appendChild(line);
+  });
+  wrap.appendChild(inner);
+  return wrap;
+}
+
 function buildNogiCard(d,s){
   const card=document.createElement('div'); card.className='card card-nogi';
   const hdr=document.createElement('div'); hdr.className='card-hdr';
@@ -1669,29 +1705,41 @@ function buildNogiCard(d,s){
   const zh=document.createElement('div'); zh.className='card-zh'; zh.textContent=d.zh;
   const meta=document.createElement('div'); meta.className='card-meta';
   meta.textContent='📅 '+d.date+'・'+d.total+'名　★ '+d.center.join('、');
-  const lbl1=document.createElement('div'); lbl1.className='row-label rl-nogi'; lbl1.textContent='福神（前排）';
-  const mem1=document.createElement('div'); mem1.className='members';
-  (d.fukujin||[]).forEach((name,i)=>{
-    const lbl=(d.fukujinLabel||[])[i]||name;
-    const isC=d.center.includes(name);
-    const sp=makeTag(name,isC?'nc':'nf',(isC?'★ ':'')+lbl,'nogi');
-    applyHl(sp,s,name); mem1.appendChild(sp);
-  });
-  const lbl2=document.createElement('div'); lbl2.className='row-label rl-nogi'; lbl2.textContent='選拔（後排）';
-  const mem2=document.createElement('div'); mem2.className='members';
-  (d.back||[]).forEach(name=>{
-    const sp=makeTag(name,'nb',name,'nogi'); applyHl(sp,s,name); mem2.appendChild(sp);
-  });
   const footer=document.createElement('div'); footer.className='card-footer';
   const eb=document.createElement('button'); eb.className='card-edit-btn'; eb.textContent='✏️ 編輯';
   eb.addEventListener('click',()=>openEditModal('nogi',d.num)); footer.appendChild(eb);
-  card.append(hdr,zh,meta,lbl1,mem1,lbl2,mem2,footer);
+  card.append(hdr,zh,meta);
+
+  if(hasFormation(d)){
+    card.appendChild(buildFormation(d,'nogi',{
+      labels:['後排','中排','前排'],
+      centerCls:'nc', rowCls:['nb','nf','nf'], rlCls:'rl-nogi'
+    }));
+  } else {
+    // 尚無站位資料：維持福神／後排分區，不臆測左右順序
+    const lbl1=document.createElement('div'); lbl1.className='row-label rl-nogi'; lbl1.textContent='福神（前二列）';
+    const mem1=document.createElement('div'); mem1.className='members';
+    (d.fukujin||[]).forEach((name,i)=>{
+      const lbl=(d.fukujinLabel||[])[i]||name;
+      const isC=d.center.includes(name);
+      const sp=makeTag(name,isC?'nc':'nf',(isC?'★ ':'')+lbl,'nogi');
+      applyHl(sp,s,name); mem1.appendChild(sp);
+    });
+    const lbl2=document.createElement('div'); lbl2.className='row-label rl-nogi'; lbl2.textContent='選拔（3列目）';
+    const mem2=document.createElement('div'); mem2.className='members';
+    (d.back||[]).forEach(name=>{
+      const sp=makeTag(name,'nb',name,'nogi'); applyHl(sp,s,name); mem2.appendChild(sp);
+    });
+    const note=document.createElement('div'); note.className='fm-note';
+    note.style.paddingLeft='0'; note.textContent='※ 此單曲尚未建立站位資料，依名單分區顯示';
+    card.append(lbl1,mem1,lbl2,mem2,note);
+  }
+  card.appendChild(footer);
   return card;
 }
 function buildRowsCard(d,g){
   const s=S[g];
   const isH=g==='hinata',isK=g==='keyaki',isA=g==='aoba';
-  const LABELS=['前排','中排','後排'];
   const CLS_H=['hm','hb','hback'],CLS_S=['sr1','sr2','sr3'],CLS_K=['km','kb','kback'],CLS_A=['am','ab','aback'];
   const rlCls=isH?'rl-hinata':isK?'rl-keyaki':isA?'rl-aoba':'rl-sakura';
   const cardCls=isH?'card-hinata':isK?'card-keyaki':isA?'card-aoba':'card-sakura';
@@ -1707,20 +1755,12 @@ function buildRowsCard(d,g){
   const meta=document.createElement('div'); meta.className='card-meta';
   meta.textContent='📅 '+d.date+'・'+d.total+'名　★ '+(d.centerLabel||d.center).join('、');
   card.append(hdr,zh,meta);
-  [2,1,0].forEach((ri,di)=>{
-    const row=(d.rows||[[],[],[]])[ri]||[];
-    if(!row.length)return;
-    const lbl=document.createElement('div'); lbl.className='row-label '+rlCls; lbl.textContent=LABELS[di];
-    const mem=document.createElement('div'); mem.className='members';
-    row.forEach(name=>{
-      const isC=d.center.includes(name);
-      const cLabel=isC&&d.centerLabel?d.centerLabel[d.center.indexOf(name)]:name;
-      const cls=isC?centerCls:rowCls[di];
-      const sp=makeTag(name,cls,(isC?'★ ':'')+cLabel,g);
-      applyHl(sp,s,name); mem.appendChild(sp);
-    });
-    card.append(lbl,mem);
-  });
+  card.appendChild(buildFormation(d,g,{
+    labels:['後排','中排','前排'],
+    centerCls:centerCls,
+    rowCls:[rowCls[2],rowCls[1],rowCls[0]],
+    rlCls:rlCls
+  }));
   const footer=document.createElement('div'); footer.className='card-footer';
   const eb=document.createElement('button'); eb.className='card-edit-btn'; eb.textContent='✏️ 編輯';
   eb.addEventListener('click',()=>openEditModal(g,d.num)); footer.appendChild(eb);
