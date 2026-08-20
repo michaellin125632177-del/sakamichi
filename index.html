@@ -297,6 +297,17 @@ body{font-family:'Segoe UI',sans-serif;background:#0e0818;color:#f0e6ff;min-heig
 .pk-note{font-size:.72rem;color:#5a4070;margin-top:6px;}
 .pk-note b{color:#c084fc;font-weight:700;}
 
+/* ── 備份 / 還原 ── */
+.bk-desc{font-size:.78rem;color:#9370c0;line-height:1.7;margin-bottom:10px;}
+.bk-desc b{color:#e9d5ff;}
+.bk-file{width:100%;background:#0e0818;border:1px solid #4a2d7a;border-radius:8px;color:#c084fc;padding:9px 12px;font-size:.8rem;cursor:pointer;}
+.bk-file::file-selector-button{background:rgba(168,85,247,.18);border:1px solid #a855f7;color:#e9d5ff;border-radius:6px;padding:5px 12px;font-size:.78rem;cursor:pointer;margin-right:10px;}
+.bk-preview{margin-top:10px;padding:9px 12px;border-radius:8px;background:rgba(56,189,248,.07);border:1px solid #0284c7;color:#bae6fd;font-size:.78rem;line-height:1.7;}
+.bk-modes{display:flex;flex-direction:column;gap:7px;margin-top:11px;}
+.bk-mode{display:flex;align-items:flex-start;gap:8px;font-size:.78rem;color:#c9b8e8;cursor:pointer;line-height:1.6;}
+.bk-mode input{margin-top:3px;flex-shrink:0;accent-color:#a855f7;}
+.bk-mode b{color:#e9d5ff;}
+
 /* ── 成員名冊 ── */
 .rs-list{max-height:52vh;overflow-y:auto;border:1px solid #2a1250;border-radius:8px;}
 .rs-gen{padding:7px 13px;font-size:.74rem;font-weight:700;color:#c084fc;background:#0a0520;position:sticky;top:0;letter-spacing:.5px;border-bottom:1px solid #2a1250;}
@@ -642,8 +653,29 @@ body{font-family:'Segoe UI',sans-serif;background:#0e0818;color:#f0e6ff;min-heig
     <div class="mtabs">
       <button class="mtab active" id="m-tab-list" onclick="switchManageTab('list')">單曲清單</button>
       <button class="mtab" id="m-tab-trash" onclick="switchManageTab('trash')">🗑 回收桶</button>
+      <button class="mtab" id="m-tab-backup" onclick="switchManageTab('backup')">💾 備份</button>
     </div>
-    <div class="mr" style="margin-bottom:12px;"><label>選擇團體</label>
+    <div id="m-backup" style="display:none;">
+      <div class="mg">
+        <h3>⬇ 匯出備份</h3>
+        <div class="bk-desc" id="bk-summary">統計中…</div>
+        <div class="mbtns"><button class="btn-save" onclick="exportBackup()">⬇ 下載備份檔</button></div>
+      </div>
+      <div class="mg">
+        <h3>⬆ 還原備份</h3>
+        <div class="bk-desc">選擇先前下載的備份檔（.json）</div>
+        <input type="file" id="bk-file" accept="application/json,.json" class="bk-file">
+        <div id="bk-preview" class="bk-preview" style="display:none;"></div>
+        <div class="bk-modes" id="bk-modes" style="display:none;">
+          <label class="bk-mode"><input type="radio" name="bk-mode" value="merge" checked>
+            <span><b>合併</b>　備份檔裡有的覆蓋過去，其餘資料保留不動</span></label>
+          <label class="bk-mode"><input type="radio" name="bk-mode" value="replace">
+            <span><b>完整還原</b>　資料庫變成跟備份檔一模一樣，<b style="color:#fca5a5;">備份檔沒有的會被刪除</b></span></label>
+        </div>
+        <div class="mbtns"><button class="btn-save" id="bk-import-btn" onclick="importBackupStep()" disabled>⬆ 開始還原</button></div>
+      </div>
+    </div>
+    <div class="mr" id="m-group-row" style="margin-bottom:12px;"><label>選擇團體</label>
       <select id="m-group" onchange="refreshManageList()">
         <option value="nogi">乃木坂46</option>
         <option value="hinata">日向坂46</option>
@@ -2104,13 +2136,154 @@ function openManageModal(){
 }
 function switchManageTab(tab){
   manageTab=tab;
-  document.getElementById('m-tab-list').classList.toggle('active',tab==='list');
-  document.getElementById('m-tab-trash').classList.toggle('active',tab==='trash');
+  const isBackup=tab==='backup';
+  ['list','trash','backup'].forEach(t=>document.getElementById('m-tab-'+t).classList.toggle('active',tab===t));
   document.getElementById('m-trash-actions').style.display=tab==='trash'?'flex':'none';
-  document.getElementById('m-sub').textContent=tab==='trash'
-    ?'已刪除的單曲都留在這裡，按「復原」即可還原；超過 30 天會自動永久刪除'
+  document.getElementById('m-backup').style.display=isBackup?'':'none';
+  document.getElementById('m-group-row').style.display=isBackup?'none':'';
+  document.getElementById('manage-list').style.display=isBackup?'none':'';
+  document.getElementById('seed-btn').style.display=isBackup?'none':'';
+  document.getElementById('clear-all-btn').style.display=isBackup?'none':'';
+  document.getElementById('m-sub').textContent=
+    isBackup?'把全部資料存成一個檔案，或從備份檔還原':
+    tab==='trash'?'已刪除的單曲都留在這裡，按「復原」即可還原；超過 30 天會自動永久刪除'
     :'所有單曲皆可刪除，刪除後會進入回收桶，可隨時復原';
-  refreshManageList();
+  if(isBackup)refreshBackupSummary(); else refreshManageList();
+}
+
+// ── 備份 / 還原 ──
+const BACKUP_VERSION=1;
+const ALL_GROUPS=['nogi','hinata','sakura','keyaki','aoba'];
+function collectBackup(){
+  const singles={},members={};
+  ALL_GROUPS.forEach(g=>{
+    singles[g]=[...(liveData[g]||[]),...(trashData[g]||[])]
+      .slice().sort((a,b)=>a.num-b.num).map(e=>({...e}));
+  });
+  const ov=loadMemberOverrides();
+  ALL_GROUPS.forEach(g=>{if(ov[g]&&Object.keys(ov[g]).length)members[g]={...ov[g]};});
+  return {app:'sakamichi',version:BACKUP_VERSION,exportedAt:new Date().toISOString(),singles,members};
+}
+function countBackup(data){
+  let s=0,t=0,m=0;
+  ALL_GROUPS.forEach(g=>{
+    (data.singles&&data.singles[g]||[]).forEach(e=>{e.deleted?t++:s++;});
+    m+=Object.keys((data.members&&data.members[g])||{}).length;
+  });
+  return {singles:s,trash:t,members:m};
+}
+function refreshBackupSummary(){
+  const c=countBackup(collectBackup());
+  document.getElementById('bk-summary').innerHTML=
+    '目前資料：單曲 <b>'+c.singles+'</b> 張'+(c.trash?('（另有回收桶 <b>'+c.trash+'</b> 張）'):'')+
+    '、自訂成員資料 <b>'+c.members+'</b> 筆。<br>備份檔含回收桶內容，還原後連刪除狀態都會一併回復。';
+}
+function exportBackup(){
+  try{
+    const data=collectBackup();
+    const blob=new Blob([JSON.stringify(data,null,2)],{type:'application/json'});
+    const url=URL.createObjectURL(blob);
+    const a=document.createElement('a');
+    a.href=url;
+    a.download='sakamichi-backup-'+new Date().toISOString().slice(0,10)+'.json';
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(()=>URL.revokeObjectURL(url),1000);
+    const c=countBackup(data);
+    showMsg('m-msg','ok','✓ 已下載備份（單曲 '+(c.singles+c.trash)+' 張、成員 '+c.members+' 筆）。',true);
+  }catch(e){showMsg('m-msg','err','匯出失敗：'+e.message,false);}
+}
+
+let pendingBackup=null,importStep=0;
+document.getElementById('bk-file').addEventListener('change',e=>{
+  const f=e.target.files&&e.target.files[0];
+  pendingBackup=null; importStep=0;
+  const btn=document.getElementById('bk-import-btn');
+  btn.disabled=true; btn.textContent='⬆ 開始還原';
+  const prev=document.getElementById('bk-preview'), modes=document.getElementById('bk-modes');
+  if(!f){prev.style.display='none';modes.style.display='none';return;}
+  const r=new FileReader();
+  r.onload=()=>{
+    try{
+      const data=JSON.parse(r.result);
+      if(data.app!=='sakamichi')throw new Error('這不是本站的備份檔');
+      if(!data.singles&&!data.members)throw new Error('備份檔沒有可還原的資料');
+      if(data.version>BACKUP_VERSION)throw new Error('備份檔版本較新（v'+data.version+'），請先更新網站');
+      pendingBackup=data;
+      const c=countBackup(data);
+      prev.style.display=''; prev.innerHTML=
+        '備份時間：<b>'+(data.exportedAt?new Date(data.exportedAt).toLocaleString('zh-TW'):'未知')+'</b><br>'+
+        '內容：單曲 <b>'+c.singles+'</b> 張'+(c.trash?('、回收桶 <b>'+c.trash+'</b> 張'):'')+'、成員資料 <b>'+c.members+'</b> 筆';
+      modes.style.display='flex';
+      btn.disabled=false;
+    }catch(err){
+      prev.style.display=''; prev.style.background='rgba(239,68,68,.08)';
+      prev.style.borderColor='#ef4444'; prev.style.color='#fca5a5';
+      prev.textContent='✕ '+err.message;
+      modes.style.display='none';
+    }
+  };
+  r.onerror=()=>showMsg('m-msg','err','讀取檔案失敗',false);
+  r.readAsText(f);
+});
+
+function importBackupStep(){
+  const btn=document.getElementById('bk-import-btn');
+  const mode=(document.querySelector('input[name="bk-mode"]:checked')||{}).value||'merge';
+  if(!pendingBackup){showMsg('m-msg','err','請先選擇備份檔。',false);return;}
+  if(!db){showMsg('m-msg','err','Firebase 未連線，無法還原。',false);return;}
+  if(mode==='replace'&&importStep===0){
+    importStep=1; btn.textContent='⚠️ 確認完整還原？現有資料會被覆蓋';
+    setTimeout(()=>{if(importStep===1){importStep=0;btn.textContent='⬆ 開始還原';}},4000);
+    return;
+  }
+  importStep=0; btn.disabled=true; btn.textContent='還原中…';
+  doImportBackup(pendingBackup,mode)
+    .then(r=>{
+      btn.textContent='⬆ 開始還原'; btn.disabled=false;
+      showMsg('m-msg','ok','✓ 還原完成：寫入 '+r.written+' 筆'+(r.removed?('、刪除 '+r.removed+' 筆'):'')+'。',true);
+      refreshBackupSummary();
+    })
+    .catch(e=>{
+      btn.textContent='⬆ 開始還原'; btn.disabled=false;
+      showMsg('m-msg','err','還原失敗：'+e.message,false);
+    });
+}
+// Firestore 單批上限 500，保守切 400
+async function commitChunks(ops){
+  for(let i=0;i<ops.length;i+=400){
+    const batch=db.batch();
+    ops.slice(i,i+400).forEach(fn=>fn(batch));
+    await batch.commit();
+  }
+}
+async function doImportBackup(data,mode){
+  const ops=[]; let written=0,removed=0;
+  ALL_GROUPS.forEach(g=>{
+    const entries=(data.singles&&data.singles[g])||[];
+    const keep=new Set(entries.map(e=>String(e.num)));
+    entries.forEach(e=>{
+      ops.push(b=>b.set(db.collection(g).doc(String(e.num)),toDoc({...e}))); written++;
+    });
+    if(mode==='replace'){
+      [...(liveData[g]||[]),...(trashData[g]||[])].forEach(e=>{
+        if(!keep.has(String(e.num))){ops.push(b=>b.delete(db.collection(g).doc(String(e.num))));removed++;}
+      });
+    }
+  });
+  const ov=loadMemberOverrides();
+  ALL_GROUPS.forEach(g=>{
+    const mem=(data.members&&data.members[g])||{};
+    Object.entries(mem).forEach(([name,info])=>{
+      ops.push(b=>b.set(db.collection(MEM_COL).doc(memberDocId(g,name)),{g,name,...info})); written++;
+    });
+    if(mode==='replace'){
+      Object.keys(ov[g]||{}).forEach(name=>{
+        if(!(name in mem)){ops.push(b=>b.delete(db.collection(MEM_COL).doc(memberDocId(g,name))));removed++;}
+      });
+    }
+  });
+  await commitChunks(ops);
+  return {written,removed};
 }
 function makeBadge(text,color,bg,border){
   const t=document.createElement('span');
