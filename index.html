@@ -833,6 +833,7 @@ try{
       });
       liveData[g].sort((a,b)=>b.num-a.num);
       trashData[g].sort((a,b)=>(b.deletedAt||0)-(a.deletedAt||0));
+      sweepTrash(g);
       dbReady[g]=true;
       cacheSave(g);
       renderG(g);
@@ -885,6 +886,24 @@ function restoreEntry(g,num){
 function purgeEntry(g,num){
   if(!db)return Promise.reject(new Error('Firebase 未設定'));
   return db.collection(g).doc(String(num)).delete();
+}
+// ── 回收桶保留期限：30 天後自動永久刪除 ──
+const TRASH_TTL_DAYS=30;
+const TRASH_TTL_MS=TRASH_TTL_DAYS*24*60*60*1000;
+const DAY_MS=24*60*60*1000;
+// 回傳剩餘天數；沒有 deletedAt 的舊資料回傳 null（不自動清除）
+function trashDaysLeft(d){
+  if(!d.deletedAt)return null;
+  return Math.ceil((d.deletedAt+TRASH_TTL_MS-Date.now())/DAY_MS);
+}
+function sweepTrash(g){
+  if(!db)return;
+  const now=Date.now();
+  (trashData[g]||[]).forEach(d=>{
+    if(d.deletedAt&&now-d.deletedAt>=TRASH_TTL_MS){
+      purgeEntry(g,d.num).catch(()=>{});
+    }
+  });
 }
 
 // ── 種子資料（一次性匯入）──
@@ -1734,7 +1753,7 @@ function switchManageTab(tab){
   document.getElementById('m-tab-trash').classList.toggle('active',tab==='trash');
   document.getElementById('m-trash-actions').style.display=tab==='trash'?'flex':'none';
   document.getElementById('m-sub').textContent=tab==='trash'
-    ?'已刪除的單曲都留在這裡，按「復原」即可還原'
+    ?'已刪除的單曲都留在這裡，按「復原」即可還原；超過 30 天會自動永久刪除'
     :'所有單曲皆可刪除，刪除後會進入回收桶，可隨時復原';
   refreshManageList();
 }
@@ -1760,6 +1779,10 @@ function refreshManageList(){
       const sp=document.createElement('span');
       sp.textContent='第'+d.num+'張　'+d.title;
       if(isBaseEntry(g,d.num))sp.appendChild(makeTag('基礎','#7dd3fc','rgba(56,189,248,.12)','#0284c7'));
+      const left=trashDaysLeft(d);
+      if(left===null)sp.appendChild(makeTag('無期限','#94a3b8','rgba(148,163,184,.12)','#475569'));
+      else if(left<=3)sp.appendChild(makeTag('剩 '+Math.max(left,0)+' 天','#fca5a5','rgba(239,68,68,.14)','#ef4444'));
+      else sp.appendChild(makeTag('剩 '+left+' 天','#fbbf24','rgba(251,191,36,.12)','#b45309'));
       const wrap=document.createElement('div');
       wrap.style.cssText='display:flex;gap:6px;flex-shrink:0;';
       const rb=document.createElement('button'); rb.className='del-btn';
