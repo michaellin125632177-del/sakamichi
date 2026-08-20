@@ -578,8 +578,12 @@ body{font-family:'Segoe UI',sans-serif;background:#0e0818;color:#f0e6ff;min-heig
 <!-- 刪除 Modal -->
 <div class="modal" id="manageModal">
   <div class="modal-box">
-    <h2>🗑 刪除自訂單曲</h2>
-    <div class="modal-sub">只有透過「新增單曲」加入的資料可在此刪除</div>
+    <h2>🗑 管理單曲</h2>
+    <div class="modal-sub" id="m-sub">所有單曲皆可刪除，刪除後會進入回收桶，可隨時復原</div>
+    <div class="mtabs">
+      <button class="mtab active" id="m-tab-list" onclick="switchManageTab('list')">單曲清單</button>
+      <button class="mtab" id="m-tab-trash" onclick="switchManageTab('trash')">🗑 回收桶</button>
+    </div>
     <div class="mr" style="margin-bottom:12px;"><label>選擇團體</label>
       <select id="m-group" onchange="refreshManageList()">
         <option value="nogi">乃木坂46</option>
@@ -590,11 +594,15 @@ body{font-family:'Segoe UI',sans-serif;background:#0e0818;color:#f0e6ff;min-heig
       </select>
     </div>
     <div class="manage-list" id="manage-list"></div>
+    <div class="mbtns" id="m-trash-actions" style="display:none;margin-bottom:10px;">
+      <button onclick="restoreAll()" style="background:rgba(34,197,94,.12);border:1px solid #22c55e;color:#86efac;border-radius:8px;padding:8px 14px;font-size:.8rem;cursor:pointer;">↩ 全部復原</button>
+      <button onclick="purgeAllStep()" id="purge-all-btn" style="background:rgba(239,68,68,.12);border:1px solid #ef4444;color:#fca5a5;border-radius:8px;padding:8px 14px;font-size:.8rem;cursor:pointer;">✕ 清空回收桶</button>
+    </div>
     <div id="m-msg" class="mmsg"></div>
     <div class="mbtns" style="justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;">
       <button class="btn-cancel" onclick="closeModal('manageModal')">關閉</button>
       <button id="seed-btn" onclick="seedDatabase()" style="background:rgba(56,189,248,.1);border:1px solid #38bdf8;color:#7dd3fc;border-radius:8px;padding:10px 16px;font-size:.8rem;cursor:pointer;">📤 匯入所有基礎資料</button>
-      <button onclick="clearAllStep()" style="background:rgba(239,68,68,.12);border:1px solid #ef4444;color:#fca5a5;border-radius:8px;padding:10px 16px;font-size:.8rem;cursor:pointer;" id="clear-all-btn">🗑 清除所有自訂資料</button>
+      <button onclick="clearAllStep()" style="background:rgba(239,68,68,.12);border:1px solid #ef4444;color:#fca5a5;border-radius:8px;padding:10px 16px;font-size:.8rem;cursor:pointer;" id="clear-all-btn">🗑 清除所有新增單曲</button>
     </div>
   </div>
 </div>
@@ -796,7 +804,7 @@ const firebaseConfig = {
   appId: "1:913584523861:web:5a02fe673e5bf3e5b662dc"
 };
 
-let db=null,liveData={nogi:[],hinata:[],sakura:[],keyaki:[],aoba:[]},dbReady={nogi:false,hinata:false,sakura:false,keyaki:false,aoba:false};
+let db=null,liveData={nogi:[],hinata:[],sakura:[],keyaki:[],aoba:[]},trashData={nogi:[],hinata:[],sakura:[],keyaki:[],aoba:[]},dbReady={nogi:false,hinata:false,sakura:false,keyaki:false,aoba:false};
 
 function toDoc(entry){
   const doc={...entry};
@@ -818,12 +826,18 @@ try{
   db.enablePersistence({synchronizeTabs:true}).catch(()=>{});
   ['nogi','hinata','sakura','keyaki','aoba'].forEach(g=>{
     db.collection(g).onSnapshot(snap=>{
-      liveData[g]=[];
-      snap.forEach(docSnap=>liveData[g].push(fromDoc(docSnap.id,docSnap.data())));
+      liveData[g]=[];trashData[g]=[];
+      snap.forEach(docSnap=>{
+        const e=fromDoc(docSnap.id,docSnap.data());
+        (e.deleted?trashData[g]:liveData[g]).push(e);
+      });
       liveData[g].sort((a,b)=>b.num-a.num);
+      trashData[g].sort((a,b)=>(b.deletedAt||0)-(a.deletedAt||0));
       dbReady[g]=true;
+      cacheSave(g);
       renderG(g);
       if(rankPanelOpen)buildRankTable();
+      if(document.getElementById('manageModal').classList.contains('open'))refreshManageList();
     },err=>{
       console.warn('Firestore',g,err);
       if(!dbReady[g]){dbReady[g]=true;renderG(g);}
@@ -841,10 +855,36 @@ function getBase(g){
   if(g==='keyaki')return keyakiBase;
   return aobaBase;
 }
+// ── 本地快取：讓「新增的單曲」與基礎資料同等對待（離線／連線前也讀得到）──
+const CACHE_KEY='sakamichiCache';
+function cacheLoad(){
+  try{return JSON.parse(localStorage.getItem(CACHE_KEY)||'{}');}catch(e){return {};}
+}
+function cacheSave(g){
+  try{const c=cacheLoad();c[g]=liveData[g];localStorage.setItem(CACHE_KEY,JSON.stringify(c));}catch(e){}
+}
 function getData(g){
   if(db&&dbReady[g])return liveData[g].slice();
-  // fallback to base data when Firestore not ready
+  // Firestore 尚未就緒：先用本地快取（含使用者新增的單曲），再退回內建基礎資料
+  const cached=cacheLoad()[g];
+  if(cached&&cached.length)return cached.slice().sort((a,b)=>b.num-a.num);
   return getBase(g).slice().sort((a,b)=>b.num-a.num);
+}
+// 是否為內建基礎資料（僅供標示用，不影響可否刪除）
+function isBaseEntry(g,num){return getBase(g).some(b=>b.num===num);}
+
+// ── 軟刪除／復原 ──
+function softDelete(g,num){
+  if(!db)return Promise.reject(new Error('Firebase 未設定'));
+  return db.collection(g).doc(String(num)).update({deleted:true,deletedAt:Date.now()});
+}
+function restoreEntry(g,num){
+  if(!db)return Promise.reject(new Error('Firebase 未設定'));
+  return db.collection(g).doc(String(num)).update({deleted:false,deletedAt:null});
+}
+function purgeEntry(g,num){
+  if(!db)return Promise.reject(new Error('Firebase 未設定'));
+  return db.collection(g).doc(String(num)).delete();
 }
 
 // ── 種子資料（一次性匯入）──
@@ -854,15 +894,18 @@ async function seedDatabase(){
   btn.disabled=true;btn.textContent='匯入中…';
   try{
     const batch=db.batch();
-    let count=0;
+    let count=0,skipped=0;
     ['nogi','hinata','sakura','keyaki','aoba'].forEach(g=>{
       getBase(g).forEach(entry=>{
+        // 已存在的（含回收桶內）一律跳過：避免覆蓋你的編輯、也不會把刪掉的救回來
+        const exists=(liveData[g]||[]).some(d=>d.num===entry.num)||(trashData[g]||[]).some(d=>d.num===entry.num);
+        if(exists){skipped++;return;}
         const ref=db.collection(g).doc(String(entry.num));
         batch.set(ref,toDoc({...entry}));count++;
       });
     });
     await batch.commit();
-    btn.textContent='✓ 完成（共'+count+'筆）';
+    btn.textContent=count?('✓ 匯入'+count+'筆（略過'+skipped+'筆）'):('✓ 已是最新（'+skipped+'筆皆存在）');
     setTimeout(()=>{btn.textContent='📤 匯入所有基礎資料';btn.disabled=false;},3000);
   }catch(e){
     console.error(e);btn.textContent='❌ 失敗：'+e.message;btn.disabled=false;
@@ -1584,6 +1627,7 @@ function doAdd(){
   const center=parseCSV(document.getElementById('a-center').value);
   if(!num||!title||!date||!center.length){showMsg('a-msg','err','請填寫所有必填欄位',false);return;}
   if(getData(g).find(d=>d.num===num)){showMsg('a-msg','err','第'+num+'張已存在！',false);return;}
+  if((trashData[g]||[]).some(d=>d.num===num)){showMsg('a-msg','err','第'+num+'張在回收桶中，請先復原或永久刪除。',false);return;}
   let entry={num,title,zh,date,center,custom:true};
   if(g==='nogi'){
     const fukujin=parseCSV(document.getElementById('a-fukujin').value);
@@ -1678,31 +1722,111 @@ function doSaveEdit(){
   }
 }
 
+let manageTab='list';
 function openManageModal(){
-  document.getElementById('m-group').value='nogi';
-  refreshManageList(); openModal('manageModal');
+  const active=document.querySelector('.page.active');
+  document.getElementById('m-group').value=active?active.id.replace('page-',''):'nogi';
+  switchManageTab('list'); openModal('manageModal');
+}
+function switchManageTab(tab){
+  manageTab=tab;
+  document.getElementById('m-tab-list').classList.toggle('active',tab==='list');
+  document.getElementById('m-tab-trash').classList.toggle('active',tab==='trash');
+  document.getElementById('m-trash-actions').style.display=tab==='trash'?'flex':'none';
+  document.getElementById('m-sub').textContent=tab==='trash'
+    ?'已刪除的單曲都留在這裡，按「復原」即可還原'
+    :'所有單曲皆可刪除，刪除後會進入回收桶，可隨時復原';
+  refreshManageList();
+}
+function makeTag(text,color,bg,border){
+  const t=document.createElement('span');
+  t.textContent=text;
+  t.style.cssText='font-size:.66rem;padding:1px 7px;border-radius:9px;margin-left:7px;color:'+color+';background:'+bg+';border:1px solid '+border+';';
+  return t;
+}
+function emptyRow(list,text){
+  const div=document.createElement('div'); div.className='manage-item';
+  div.style.cssText='color:#64748b;justify-content:center;';
+  div.textContent=text; list.appendChild(div);
 }
 function refreshManageList(){
   const g=document.getElementById('m-group').value;
   const list=document.getElementById('manage-list'); list.innerHTML='';
-  const data=(liveData[g]||[]).filter(d=>d.custom);
-  if(!data.length){
-    const div=document.createElement('div'); div.className='manage-item';
-    div.style.cssText='color:#64748b;justify-content:center;';
-    div.textContent='目前無自訂新增的單曲'; list.appendChild(div); return;
+  if(manageTab==='trash'){
+    const data=(trashData[g]||[]);
+    if(!data.length){emptyRow(list,'回收桶是空的');return;}
+    data.forEach(d=>{
+      const item=document.createElement('div'); item.className='manage-item';
+      const sp=document.createElement('span');
+      sp.textContent='第'+d.num+'張　'+d.title;
+      if(isBaseEntry(g,d.num))sp.appendChild(makeTag('基礎','#7dd3fc','rgba(56,189,248,.12)','#0284c7'));
+      const wrap=document.createElement('div');
+      wrap.style.cssText='display:flex;gap:6px;flex-shrink:0;';
+      const rb=document.createElement('button'); rb.className='del-btn';
+      rb.style.cssText='background:rgba(34,197,94,.12);border-color:#22c55e;color:#86efac;';
+      rb.textContent='↩ 復原';
+      rb.addEventListener('click',()=>{
+        restoreEntry(g,d.num)
+          .then(()=>{showMsg('m-msg','ok','已復原「'+d.title+'」。',true);if(rankPanelOpen)buildRankTable();})
+          .catch(e=>showMsg('m-msg','err','復原失敗：'+e.message,false));
+      });
+      const pb=document.createElement('button'); pb.className='del-btn'; pb.textContent='✕ 永久刪除';
+      pb.addEventListener('click',()=>{
+        if(pb.dataset.confirm!=='1'){
+          pb.dataset.confirm='1'; pb.textContent='⚠️ 確認？';
+          setTimeout(()=>{if(pb.dataset.confirm==='1'){pb.dataset.confirm='';pb.textContent='✕ 永久刪除';}},3000);
+          return;
+        }
+        purgeEntry(g,d.num)
+          .then(()=>showMsg('m-msg','ok','已永久刪除。',true))
+          .catch(e=>showMsg('m-msg','err','刪除失敗：'+e.message,false));
+      });
+      wrap.append(rb,pb);
+      item.append(sp,wrap); list.appendChild(item);
+    });
+    return;
   }
+  const data=getData(g);
+  if(!data.length){emptyRow(list,'此團體目前沒有單曲');return;}
   data.forEach(d=>{
     const item=document.createElement('div'); item.className='manage-item';
-    const sp=document.createElement('span'); sp.textContent='第'+d.num+'張　'+d.title;
+    const sp=document.createElement('span');
+    sp.textContent='第'+d.num+'張　'+d.title;
+    if(isBaseEntry(g,d.num))sp.appendChild(makeTag('基礎','#7dd3fc','rgba(56,189,248,.12)','#0284c7'));
+    else sp.appendChild(makeTag('新增','#c084fc','rgba(168,85,247,.12)','#9333ea'));
     const btn=document.createElement('button'); btn.className='del-btn'; btn.textContent='🗑 刪除';
     btn.addEventListener('click',()=>{
-      if(!db){showMsg('m-msg','err','Firebase 未設定。',false);return;}
-      db.collection(g).doc(String(d.num)).delete()
-        .then(()=>{refreshManageList();showMsg('m-msg','ok','已刪除。',true);if(rankPanelOpen)buildRankTable();})
+      softDelete(g,d.num)
+        .then(()=>{showMsg('m-msg','ok','已移入回收桶，可在「🗑 回收桶」復原。',true);if(rankPanelOpen)buildRankTable();})
         .catch(e=>showMsg('m-msg','err','刪除失敗：'+e.message,false));
     });
     item.append(sp,btn); list.appendChild(item);
   });
+}
+function restoreAll(){
+  const g=document.getElementById('m-group').value;
+  const data=(trashData[g]||[]).slice();
+  if(!data.length){showMsg('m-msg','err','回收桶是空的。',false);return;}
+  Promise.all(data.map(d=>restoreEntry(g,d.num)))
+    .then(()=>{showMsg('m-msg','ok','✓ 已復原 '+data.length+' 張單曲。',true);if(rankPanelOpen)buildRankTable();})
+    .catch(e=>showMsg('m-msg','err','復原失敗：'+e.message,false));
+}
+let purgeStep=0;
+function purgeAllStep(){
+  const btn=document.getElementById('purge-all-btn');
+  const g=document.getElementById('m-group').value;
+  if(purgeStep===0){
+    if(!(trashData[g]||[]).length){showMsg('m-msg','err','回收桶是空的。',false);return;}
+    btn.textContent='⚠️ 確認清空？無法復原';
+    purgeStep=1;
+    setTimeout(()=>{if(purgeStep===1){btn.textContent='✕ 清空回收桶';purgeStep=0;}},3000);
+    return;
+  }
+  purgeStep=0; btn.textContent='✕ 清空回收桶';
+  const data=(trashData[g]||[]).slice();
+  Promise.all(data.map(d=>purgeEntry(g,d.num)))
+    .then(()=>showMsg('m-msg','ok','✓ 已清空回收桶（'+data.length+' 張）。',true))
+    .catch(e=>showMsg('m-msg','err','清空失敗：'+e.message,false));
 }
 
 let clearStep=0;
@@ -1715,7 +1839,7 @@ function clearAllStep(){
     clearStep=1;
     setTimeout(()=>{
       if(clearStep===1){
-        btn.textContent='🗑 清除所有自訂資料';
+        btn.textContent='🗑 清除所有新增單曲';
         btn.style.background='rgba(239,68,68,.12)';
         btn.style.color='#fca5a5';
         clearStep=0;
@@ -1726,12 +1850,13 @@ function clearAllStep(){
     if(!db){showMsg('m-msg','err','Firebase 未設定。',false);return;}
     const deletes=[];
     ['nogi','hinata','sakura','keyaki','aoba'].forEach(g=>{
-      (liveData[g]||[]).filter(d=>d.custom).forEach(d=>{
-        deletes.push(db.collection(g).doc(String(d.num)).delete());
+      (liveData[g]||[]).filter(d=>!isBaseEntry(g,d.num)).forEach(d=>{
+        deletes.push(softDelete(g,d.num));
       });
     });
+    if(!deletes.length){showMsg('m-msg','err','沒有新增的單曲可清除。',false);return;}
     Promise.all(deletes)
-      .then(()=>{refreshManageList();showMsg('m-msg','ok','✓ 已清除所有自訂資料。',true);if(rankPanelOpen)buildRankTable();})
+      .then(()=>{showMsg('m-msg','ok','✓ 已移入回收桶（'+deletes.length+' 張），可隨時復原。',true);if(rankPanelOpen)buildRankTable();})
       .catch(e=>showMsg('m-msg','err','清除失敗：'+e.message,false));
   }
 }
