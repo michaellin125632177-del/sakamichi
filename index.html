@@ -269,7 +269,7 @@ body{font-family:'Segoe UI',sans-serif;background:#0e0818;color:#f0e6ff;min-heig
   #member-panel{bottom:0;left:0;right:0;height:82vh;border-radius:16px 16px 0 0;border-top:2px solid #2a1250;box-shadow:0 -6px 24px rgba(0,0,0,.5);}
 }
 @media(min-width:600px){
-  #member-panel{top:0;right:0;width:300px;height:100vh;border-left:2px solid #2a1250;box-shadow:-6px 0 24px rgba(0,0,0,.5);}
+  #member-panel{top:0;right:0;width:min(420px,42vw);min-width:320px;height:100vh;border-left:2px solid #2a1250;box-shadow:-6px 0 24px rgba(0,0,0,.5);}
 }
 #mp-body{overflow-y:auto;flex:1;}
 .mp-row{display:flex;justify-content:space-between;padding:5px 0;border-bottom:1px solid rgba(255,255,255,.04);font-size:.8rem;}
@@ -312,8 +312,8 @@ body{font-family:'Segoe UI',sans-serif;background:#0e0818;color:#f0e6ff;min-heig
 .mp-chart-hd{font-size:.72rem;font-weight:700;color:#7c5cb0;letter-spacing:.5px;margin-bottom:6px;}
 #mp-chart svg{width:100%;height:auto;display:block;overflow:visible;}
 .tj-grid{stroke:rgba(255,255,255,.07);stroke-width:1;}
-.tj-band{font-size:8px;fill:#6b5c8a;dominant-baseline:middle;}
-.tj-xlbl{font-size:7.5px;fill:#5a4070;text-anchor:middle;}
+.tj-band{font-size:8.5px;fill:#6b5c8a;dominant-baseline:middle;}
+.tj-xlbl{font-size:8px;fill:#5a4070;text-anchor:middle;}
 .tj-line{fill:none;stroke-width:1.6;stroke-linejoin:round;stroke-linecap:round;}
 .tj-line.gap{stroke-dasharray:2.5 2.5;opacity:.5;}
 .tj-dot{cursor:pointer;}
@@ -629,11 +629,6 @@ body{font-family:'Segoe UI',sans-serif;background:#0e0818;color:#f0e6ff;min-heig
       <div class="mr"><label>發行日期</label><input type="text" id="a-date" placeholder="例：2027年1月1日"></div>
       <div class="mr"><label>Center</label><div class="pk" id="pk-a-center"></div></div>
     </div>
-    <div class="mg" id="a-nogi-sec">
-      <h3>乃木坂 — 選拔名單</h3>
-      <div class="mr"><label>福神成員</label><div class="pk" id="pk-a-fukujin"></div></div>
-      <div class="mr"><label>後排選拔</label><div class="pk" id="pk-a-back"></div></div>
-    </div>
     <div class="mg" id="a-rows-sec" style="display:none">
       <h3 id="a-rows-title">成員隊形</h3>
       <div class="mr"><label>後排</label><div class="pk" id="pk-a-row0"></div></div>
@@ -666,11 +661,6 @@ body{font-family:'Segoe UI',sans-serif;background:#0e0818;color:#f0e6ff;min-heig
       </div>
     </div>
     <div class="mtab-c" id="mtab-members">
-      <div class="mg" id="e-nogi-sec">
-        <h3>乃木坂 — 選拔名單</h3>
-        <div class="mr"><label>福神成員</label><div class="pk" id="pk-e-fukujin"></div><div class="mhint">★ Center 標注自動更新</div></div>
-        <div class="mr"><label>後排選拔</label><div class="pk" id="pk-e-back"></div></div>
-      </div>
       <div class="mg" id="e-rows-sec" style="display:none">
         <h3 id="e-rows-title">成員隊形</h3>
         <div class="mr"><label>後排</label><div class="pk" id="pk-e-row0"></div></div>
@@ -1636,8 +1626,9 @@ function openMemberPanel(g,name){
   singles.forEach(d=>{
     const isC=(d.center||[]).includes(name);
     // 乃木坂格式：fukujin / back
-    const inF=(d.fukujin||[]).includes(name);
-    const inB=(d.back||[]).includes(name);
+    const hasRows=Array.isArray(d.rows)&&d.rows.some(r=>r&&r.length);
+    const inF=!hasRows&&(d.fukujin||[]).includes(name);
+    const inB=!hasRows&&(d.back||[]).includes(name);
     // 其他組格式：rows（二維陣列，index 0=後排 … 最後=前排）
     let rowRole=null;
     if(!inF&&!inB&&d.rows){
@@ -1699,7 +1690,7 @@ function memberTrajectory(g,name){
         if(at>=0){band=[3,2,1][ri];idx=at;len=r.length;where=['後排','中排','前排'][ri];break;}
       }
     }
-    if(band===null){   // 沒有站位資料時退回名單分區
+    if(band===null&&!rows){   // 沒有站位資料時退回名單分區
       if((d.fukujin||[]).includes(name)){band=2;where='福神';}
       else if((d.back||[]).includes(name)){band=3;where='Under';}
     }
@@ -1795,10 +1786,17 @@ function mpFilter(){
 
 const S={nogi:{sort:'desc',filter:[],search:''},hinata:{sort:'desc',filter:[],search:''},sakura:{sort:'desc',filter:[],search:''},keyaki:{sort:'desc',filter:[],search:''},aoba:{sort:'desc',filter:[],search:''}};
 
+// 一張單曲的所有選拔成員：站位與名單取聯集，兩邊不同步時也不會漏人
+function allMembersOf(d){
+  const out=new Set();
+  [...(d.fukujin||[]),...(d.back||[])].forEach(n=>out.add(n));
+  ((d.rows||[]).flat()).forEach(n=>out.add(n));
+  return [...out];
+}
 function countStats(g,name){
   let sel=0,ctr=0;
   getData(g).forEach(d=>{
-    const members=d.fukujin?[...(d.fukujin||[]),...(d.back||[])]:d.rows.flat();
+    const members=allMembersOf(d);
     const all=new Set([...members,...(d.center||[])]);
     if(all.has(name)){sel++;if(d.center.includes(name))ctr++;}
   });
@@ -1944,7 +1942,7 @@ function renderG(g){
   }
   let data=getData(g);
   if(s.sort==='asc')data.sort((a,b)=>a.num-b.num);
-  const allM=d=>d.fukujin?[...(d.fukujin||[]),...(d.back||[])]:d.rows.flat();
+  const allM=allMembersOf;
   if(s.filter.length)data=data.filter(d=>{
     const all=new Set([...allM(d),...(d.center||[])]);
     return s.filter.every(name=>all.has(name));
@@ -2007,7 +2005,7 @@ function runGlobalSearch(q){
   resultsEl.innerHTML='';
   let total=0;
   groups.forEach(g=>{
-    const allM=d=>d.fukujin?[...(d.fukujin||[]),...(d.back||[])]:d.rows.flat();
+    const allM=allMembersOf;
     const matched=getData(g).filter(d=>{
       const members=[...new Set([...allM(d),...(d.center||[])])];
       return d.title.toLowerCase().includes(query)||d.zh.toLowerCase().includes(query)||members.some(m=>m.toLowerCase().includes(query));
@@ -2314,11 +2312,21 @@ function openAddModal(){
 }
 function toggleAddSec(){
   const g=document.getElementById('a-group').value;
-  document.getElementById('a-nogi-sec').style.display=g==='nogi'?'block':'none';
   document.getElementById('a-rows-sec').style.display='block';   // 乃木坂也可填站位
   document.getElementById('a-rows-title').textContent=
     {nogi:'乃木坂 — 站位（可留空）',hinata:'日向坂 — 成員隊形',keyaki:'欅坂 — 成員隊形',aoba:'青葉坂 — 成員隊形'}[g]||'櫻坂 — 成員隊形';
   resetPickers(); rebuildPickers();
+}
+// 乃木坂的福神／後排由站位推導：福神＝前二列，後排＝3列目
+function nogiListsFromRows(rows,center){
+  const fukujin=[...(rows[2]||[]),...(rows[1]||[])];
+  const back=[...(rows[0]||[])];
+  return {
+    fukujin,
+    fukujinLabel:fukujin.map(n=>center.includes(n)?n+(center.length>1?'（W-center）':'（center）'):n),
+    back,
+    total:fukujin.length+back.length
+  };
 }
 function doAdd(){
   const g=document.getElementById('a-group').value;
@@ -2333,14 +2341,10 @@ function doAdd(){
   if((trashData[g]||[]).some(d=>d.num===num)){showMsg('a-msg','err','第'+num+'張在回收桶中，請先復原或永久刪除。',false);return;}
   let entry={num,title,zh,date,center,custom:true};
   if(g==='nogi'){
-    const fukujin=(pickers['a-fukujin']||[]).slice();
-    if(!fukujin.length){showMsg('a-msg','err','請選擇福神成員',false);return;}
-    entry.fukujin=fukujin;
-    entry.fukujinLabel=fukujin.map(n=>center.includes(n)?n+(center.length>1?'（W-center）':'（center）'):n);
-    entry.back=(pickers['a-back']||[]).slice();
-    entry.total=entry.fukujin.length+entry.back.length;
     const nr=[0,1,2].map(i=>(pickers['a-row'+i]||[]).slice());
-    if(nr.some(r=>r.length))entry.rows=nr;   // 有填才寫入
+    if(!nr.some(r=>r.length)){showMsg('a-msg','err','請至少選擇一位選拔成員',false);return;}
+    entry.rows=nr;
+    Object.assign(entry,nogiListsFromRows(nr,center));
   } else {
     const r0=(pickers['a-row0']||[]).slice();
     const r1=(pickers['a-row1']||[]).slice();
@@ -2372,16 +2376,11 @@ function openEditModal(g,num){
   document.getElementById('e-zh').value=d.zh;
   document.getElementById('e-date').value=d.date;
   const isNogi=g==='nogi';
-  document.getElementById('e-nogi-sec').style.display=isNogi?'block':'none';
   document.getElementById('e-rows-sec').style.display='block';   // 乃木坂也可編輯站位
   const labels={nogi:'乃木坂 — 站位（可留空）',hinata:'日向坂 — 成員隊形',sakura:'櫻坂 — 成員隊形',keyaki:'欅坂 — 成員隊形',aoba:'青葉坂 — 成員隊形'};
   document.getElementById('e-rows-title').textContent=labels[g]||'成員隊形';
   resetPickers('e-');
   setPicker('e-center',d.center||[]);
-  if(isNogi){
-    setPicker('e-fukujin',d.fukujin||[]);
-    setPicker('e-back',d.back||[]);
-  }
   const rows=d.rows||[[],[],[]];
   setPicker('e-row0',rows[0]||[]);
   setPicker('e-row1',rows[1]||[]);
@@ -2408,13 +2407,10 @@ function doSaveEdit(){
   const isNogi=g==='nogi';
   let patch={title,zh,date,center};
   if(isNogi){
-    const fukujin=(pickers['e-fukujin']||[]).slice();
-    if(!fukujin.length){showMsg('e-msg','err','請選擇福神成員',false);return;}
-    patch.fukujin=fukujin;
-    patch.fukujinLabel=fukujin.map(n=>center.includes(n)?n+(center.length>1?'（W-center）':'（center）'):n);
-    patch.back=(pickers['e-back']||[]).slice();
-    patch.total=patch.fukujin.length+patch.back.length;
-    patch.rows=[0,1,2].map(i=>(pickers['e-row'+i]||[]).slice());   // 全空＝刻意清除站位
+    const nr=[0,1,2].map(i=>(pickers['e-row'+i]||[]).slice());
+    if(!nr.some(r=>r.length)){showMsg('e-msg','err','請至少選擇一位選拔成員',false);return;}
+    patch.rows=nr;
+    Object.assign(patch,nogiListsFromRows(nr,center));
   } else {
     const r0=(pickers['e-row0']||[]).slice();
     const r1=(pickers['e-row1']||[]).slice();
