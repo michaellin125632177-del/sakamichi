@@ -318,6 +318,7 @@ body{font-family:'Segoe UI',sans-serif;background:#0e0818;color:#f0e6ff;min-heig
 .tj-dot{cursor:pointer;}
 .tj-dot:hover{stroke:#fff;stroke-width:1.2;}
 .tj-miss{fill:#3b2a55;}
+.tj-break{stroke:rgba(255,255,255,.14);stroke-width:1;stroke-dasharray:none;}
 .tj-star{fill:#ec4899;stroke:#fff;stroke-width:.8;}
 .mp-chart-cap{font-size:.68rem;color:#7c5cb0;margin-top:6px;line-height:1.5;min-height:2.1em;}
 .mp-chart-cap b{color:#e9d5ff;}
@@ -1673,12 +1674,23 @@ function openMemberPanel(g,name){
   panel.classList.add('open');
 }
 
+// ── 未參與團體活動的單曲（休養／不參加）──
+// 來源：Wikipedia「乃木坂46 — 楽曲の選抜・福神」。這些不是 under，
+// 而是完全沒參與該張單曲的活動，軌跡圖必須跳過而不是畫在 under 上。
+const ABSENCE={nogi:{'中元日芽香':{17:'休止'},'久保史緒里':{21:'休止'},'井上小百合':{24:'活動休止'},'北野日奈子':{20:'休止'},'大園桃子':{24:'活動休止'},'小津玲奈':{32:'活動休止',33:'活動休止',41:'活動休止'},'山下美月':{23:'不参加'},'山崎怜奈':{12:'休止'},'岡本姫奈':{33:'活動休止'},'市來玲奈':{7:'休止'},'早川聖来':{28:'活動休止'},'林瑠奈':{33:'活動休止'},'柏幸奈':{4:'休止'},'清宮レイ':{31:'不参加'},'生田絵梨花':{9:'休止'},'金川紗耶':{34:'活動休止'}}};
+function absenceReason(g,name,num){
+  const m=(ABSENCE[g]||{})[name];
+  return m?m[num]:null;
+}
+
 // ── 生涯軌跡圖 ──
 // band 0=Center 1=前排 2=中排 3=後排；未選拔畫在底線
 const TJ_BANDS=['★ Center','前排','中排','後排'];
 function memberTrajectory(g,name){
   const singles=(getData(g)||[]).slice().sort((a,b)=>a.num-b.num);
   return singles.map(d=>{
+    const away=absenceReason(g,name,d.num);
+    if(away)return {num:d.num,title:d.title,dateStr:d.date,selected:false,absent:true,where:away};
     const isC=(d.center||[]).includes(name);
     let band=null,idx=-1,len=0,where='';
     const rows=Array.isArray(d.rows)?d.rows:null;
@@ -1747,21 +1759,36 @@ function buildTrajectory(g,name){
     const t=el('text',{x:X(n),y:H-3,class:'tj-xlbl'}); t.textContent=n; svg.appendChild(t);
   });
 
-  // 每張單曲都有位置：入選在對應排，未入選落在 under
+  // 每張單曲都有位置：入選在對應排，未入選落在 under；休養則整段跳過
   const seq=data.filter(d=>d.num>=first);
   const yOf=d=>d.selected?Y(d.band):MISS;
-  if(seq.length>1){
-    svg.appendChild(el('polyline',{
-      points:seq.map(d=>X(d.num)+','+yOf(d)).join(' '),
-      class:'tj-line',stroke:color}));
-  }
+  // 休養處畫一條淡淡的參考線，讓中斷看得出來是「沒參與」而不是漏畫
+  seq.filter(d=>d.absent).forEach(d=>{
+    const bar=el('line',{x1:X(d.num),y1:TOP-6,x2:X(d.num),y2:MISS+5,class:'tj-break'});
+    const t=el('title'); t.textContent='第'+d.num+'張 '+d.title+'（'+d.where+'）'; bar.appendChild(t);
+    svg.appendChild(bar);
+    const hit=el('rect',{x:X(d.num)-5,y:TOP-6,width:10,height:MISS+11-TOP,
+      fill:'#fff','fill-opacity':'0.001','pointer-events':'all',class:'tj-dot'});
+    hit.addEventListener('pointerenter',()=>show(d));
+    hit.addEventListener('click',()=>show(d));
+    svg.appendChild(hit);
+  });
+  // 以缺席為界切成多段，每段各自是一條實線
+  let run=[];
+  const flush=()=>{
+    if(run.length>1)svg.appendChild(el('polyline',{
+      points:run.map(d=>X(d.num)+','+yOf(d)).join(' '),class:'tj-line',stroke:color}));
+    run=[];
+  };
+  seq.forEach(d=>{ if(d.absent)flush(); else run.push(d); });
+  flush();
 
   const show=d=>{
     cap.innerHTML=d
       ?('第'+d.num+'張《'+d.title+'》　<b>'+d.where+'</b>'+(d.selected&&d.len>1&&!d.isC?('　第 '+(d.idx+1)+' / '+d.len+' 位'):''))
       :'點圖上的點可看該單曲';
   };
-  seq.filter(d=>!d.selected).forEach(d=>{
+  seq.filter(d=>!d.selected&&!d.absent).forEach(d=>{
     const c=el('circle',{cx:X(d.num),cy:MISS,r:2.2,class:'tj-dot tj-miss'});
     const t=el('title'); t.textContent='第'+d.num+'張 '+d.title+'（under）'; c.appendChild(t);
     c.addEventListener('pointerenter',()=>show(d));
