@@ -315,7 +315,6 @@ body{font-family:'Segoe UI',sans-serif;background:#0e0818;color:#f0e6ff;min-heig
 .tj-band{font-size:8.5px;fill:#6b5c8a;dominant-baseline:middle;}
 .tj-xlbl{font-size:8px;fill:#5a4070;text-anchor:middle;}
 .tj-line{fill:none;stroke-width:1.6;stroke-linejoin:round;stroke-linecap:round;}
-.tj-line.gap{stroke-dasharray:2.5 2.5;opacity:.5;}
 .tj-dot{cursor:pointer;}
 .tj-dot:hover{stroke:#fff;stroke-width:1.2;}
 .tj-miss{fill:#3b2a55;}
@@ -1694,22 +1693,33 @@ function memberTrajectory(g,name){
       if((d.fukujin||[]).includes(name)){band=2;where='福神';}
       else if((d.back||[]).includes(name)){band=3;where='Under';}
     }
-    if(band===null)return {num:d.num,title:d.title,selected:false};
+    if(band===null)return {num:d.num,title:d.title,dateStr:d.date,selected:false,band:4,where:'under'};
     if(isC){band=0;where='Center';}
     // 在該排的中央程度：正中央=1，最邊邊=0
     let central=1;
     if(len>1){const mid=(len-1)/2;central=1-Math.abs(idx-mid)/mid;}
-    return {num:d.num,title:d.title,selected:true,band,where,idx,len,isC,central};
+    return {num:d.num,title:d.title,dateStr:d.date,selected:true,band,where,idx,len,isC,central};
   });
+}
+// 單曲的發行日（"2019年9月1日"）→ Date
+function singleDate(str){
+  const m=/(\d+)年(\d+)月(\d+)日/.exec(str||'');
+  return m?new Date(+m[1],+m[2]-1,+m[3]):null;
 }
 function buildTrajectory(g,name){
   const wrap=document.getElementById('mp-chart-wrap');
   const host=document.getElementById('mp-chart');
   const cap=document.getElementById('mp-chart-cap');
-  const data=memberTrajectory(g,name);
+  let data=memberTrajectory(g,name);
   const picked=data.filter(d=>d.selected);
   if(picked.length<1){wrap.style.display='none';host.innerHTML='';return;}
   wrap.style.display='';
+  // 畢業後的單曲不算 under —— 人已經不在團了
+  const info=getMemberInfo(g,name)||{};
+  if(info.grad){
+    const gd=new Date(info.grad);
+    if(!isNaN(gd))data=data.filter(d=>{const sd=singleDate(d.dateStr);return !sd||sd<=gd;});
+  }
   const color=G_COLOR[g]||'#a855f7';
   const W=300,H=142,L=32,R=294,TOP=15,GAP=26,MISS=119;
   const first=picked[0].num, last=data[data.length-1].num;
@@ -1727,7 +1737,7 @@ function buildTrajectory(g,name){
     t.textContent=lb; svg.appendChild(t);
   });
   svg.appendChild(el('line',{x1:L,y1:MISS,x2:R,y2:MISS,class:'tj-grid'}));
-  const mt=el('text',{x:L-5,y:MISS,class:'tj-band','text-anchor':'end'}); mt.textContent='未選拔';
+  const mt=el('text',{x:L-5,y:MISS,class:'tj-band','text-anchor':'end'}); mt.textContent='under';
   svg.appendChild(mt);
 
   // x 軸刻度：首、末，以及中間每 10 張
@@ -1737,23 +1747,27 @@ function buildTrajectory(g,name){
     const t=el('text',{x:X(n),y:H-3,class:'tj-xlbl'}); t.textContent=n; svg.appendChild(t);
   });
 
-  // 未選拔的小點
-  data.filter(d=>!d.selected&&d.num>=first).forEach(d=>{
-    svg.appendChild(el('circle',{cx:X(d.num),cy:MISS,r:1.6,class:'tj-miss'}));
-  });
-
-  // 折線：相鄰單曲用實線，中間有斷層用虛線
-  for(let i=1;i<picked.length;i++){
-    const a=picked[i-1],c=picked[i];
-    svg.appendChild(el('line',{x1:X(a.num),y1:Y(a.band),x2:X(c.num),y2:Y(c.band),
-      class:'tj-line'+(c.num-a.num>1?' gap':''),stroke:color}));
+  // 每張單曲都有位置：入選在對應排，未入選落在 under
+  const seq=data.filter(d=>d.num>=first);
+  const yOf=d=>d.selected?Y(d.band):MISS;
+  if(seq.length>1){
+    svg.appendChild(el('polyline',{
+      points:seq.map(d=>X(d.num)+','+yOf(d)).join(' '),
+      class:'tj-line',stroke:color}));
   }
 
   const show=d=>{
     cap.innerHTML=d
-      ?('第'+d.num+'張《'+d.title+'》　<b>'+d.where+'</b>'+(d.len>1&&!d.isC?('　第 '+(d.idx+1)+' / '+d.len+' 位'):''))
+      ?('第'+d.num+'張《'+d.title+'》　<b>'+d.where+'</b>'+(d.selected&&d.len>1&&!d.isC?('　第 '+(d.idx+1)+' / '+d.len+' 位'):''))
       :'點圖上的點可看該單曲';
   };
+  seq.filter(d=>!d.selected).forEach(d=>{
+    const c=el('circle',{cx:X(d.num),cy:MISS,r:2.2,class:'tj-dot tj-miss'});
+    const t=el('title'); t.textContent='第'+d.num+'張 '+d.title+'（under）'; c.appendChild(t);
+    c.addEventListener('pointerenter',()=>show(d));
+    c.addEventListener('click',()=>show(d));
+    svg.appendChild(c);
+  });
   picked.forEach(d=>{
     const c=el('circle',{cx:X(d.num),cy:Y(d.band),r:d.isC?4:3,class:'tj-dot'+(d.isC?' tj-star':''),
       fill:d.isC?'#ec4899':color,'fill-opacity':d.isC?1:(0.35+0.65*(d.central||0))});
