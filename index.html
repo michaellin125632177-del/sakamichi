@@ -300,7 +300,8 @@ body{font-family:'Segoe UI',sans-serif;background:#0e0818;color:#f0e6ff;min-heig
 /* ── 成員名冊 ── */
 .rs-list{max-height:52vh;overflow-y:auto;border:1px solid #2a1250;border-radius:8px;}
 .rs-gen{padding:7px 13px;font-size:.74rem;font-weight:700;color:#c084fc;background:#0a0520;position:sticky;top:0;letter-spacing:.5px;border-bottom:1px solid #2a1250;}
-.rs-item{display:flex;align-items:center;gap:9px;padding:9px 13px;border-bottom:1px solid #1e0d3a;font-size:.82rem;}
+.rs-item{display:flex;align-items:center;gap:9px;padding:9px 13px;border-bottom:1px solid #1e0d3a;font-size:.82rem;cursor:pointer;}
+.rs-item.rs-empty{cursor:default;}
 .rs-item:last-child{border-bottom:none;}
 .rs-item:hover{background:#1e0d3a;}
 .rs-name{color:#e9d5ff;font-weight:700;flex-shrink:0;}
@@ -1400,9 +1401,9 @@ function refreshRoster(){
   let names=Object.keys(all);
   if(q)names=names.filter(n=>n.toLowerCase().includes(q));
   document.getElementById('rs-sub').textContent=
-    '共 '+Object.keys(all).length+' 位成員'+(q?('，符合 '+names.length+' 位'):'')+'　·　資料儲存於雲端，跨裝置同步';
+    '共 '+Object.keys(all).length+' 位成員'+(q?('，符合 '+names.length+' 位'):'')+'　·　點成員可查看個人頁面';
   if(!names.length){
-    const d=document.createElement('div'); d.className='rs-item';
+    const d=document.createElement('div'); d.className='rs-item rs-empty';
     d.style.cssText='justify-content:center;color:#64748b;';
     d.textContent=q?'找不到符合的成員':'此團尚無成員資料';
     list.appendChild(d); return;
@@ -1426,7 +1427,13 @@ function refreshRoster(){
       if(info.joined)bits.push('入團 '+fmtDate(info.joined));
       if(info.grad)bits.push('畢業 '+fmtDate(info.grad));
       meta.textContent=bits.join('　·　')||'（無詳細資料）';
+      item.title='查看 '+name+' 的個人頁面';
+      item.addEventListener('click',()=>{
+        closeModal('rosterModal');
+        openMemberPanel(g,name);
+      });
       const btns=document.createElement('div'); btns.className='rs-btns';
+      btns.addEventListener('click',e=>e.stopPropagation());   // 編輯／刪除不觸發開面板
       const eb=document.createElement('button'); eb.className='rs-btn'; eb.textContent='✏️ 編輯';
       eb.addEventListener('click',()=>openMemberEdit(g,name));
       btns.appendChild(eb);
@@ -1537,6 +1544,7 @@ function openMemberPanel(g,name){
 
   // 篩選按鈕文字
   const fbtn=document.getElementById('mp-fbtn');
+  fbtn.parentElement.style.display=recs.length?'':'none';
   const isFiltered=S[g]&&S[g].filter.includes(name);
   fbtn.textContent=isFiltered?'✕ 取消篩選此成員':'🔍 篩選此成員的選拔';
   fbtn.style.borderColor=isFiltered?'#dc2626':color;
