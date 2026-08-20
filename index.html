@@ -1757,7 +1757,7 @@ function switchManageTab(tab){
     :'所有單曲皆可刪除，刪除後會進入回收桶，可隨時復原';
   refreshManageList();
 }
-function makeTag(text,color,bg,border){
+function makeBadge(text,color,bg,border){
   const t=document.createElement('span');
   t.textContent=text;
   t.style.cssText='font-size:.66rem;padding:1px 7px;border-radius:9px;margin-left:7px;color:'+color+';background:'+bg+';border:1px solid '+border+';';
@@ -1778,11 +1778,11 @@ function refreshManageList(){
       const item=document.createElement('div'); item.className='manage-item';
       const sp=document.createElement('span');
       sp.textContent='第'+d.num+'張　'+d.title;
-      if(isBaseEntry(g,d.num))sp.appendChild(makeTag('基礎','#7dd3fc','rgba(56,189,248,.12)','#0284c7'));
+      if(isBaseEntry(g,d.num))sp.appendChild(makeBadge('基礎','#7dd3fc','rgba(56,189,248,.12)','#0284c7'));
       const left=trashDaysLeft(d);
-      if(left===null)sp.appendChild(makeTag('無期限','#94a3b8','rgba(148,163,184,.12)','#475569'));
-      else if(left<=3)sp.appendChild(makeTag('剩 '+Math.max(left,0)+' 天','#fca5a5','rgba(239,68,68,.14)','#ef4444'));
-      else sp.appendChild(makeTag('剩 '+left+' 天','#fbbf24','rgba(251,191,36,.12)','#b45309'));
+      if(left===null)sp.appendChild(makeBadge('無期限','#94a3b8','rgba(148,163,184,.12)','#475569'));
+      else if(left<=3)sp.appendChild(makeBadge('剩 '+Math.max(left,0)+' 天','#fca5a5','rgba(239,68,68,.14)','#ef4444'));
+      else sp.appendChild(makeBadge('剩 '+left+' 天','#fbbf24','rgba(251,191,36,.12)','#b45309'));
       const wrap=document.createElement('div');
       wrap.style.cssText='display:flex;gap:6px;flex-shrink:0;';
       const rb=document.createElement('button'); rb.className='del-btn';
@@ -1815,8 +1815,8 @@ function refreshManageList(){
     const item=document.createElement('div'); item.className='manage-item';
     const sp=document.createElement('span');
     sp.textContent='第'+d.num+'張　'+d.title;
-    if(isBaseEntry(g,d.num))sp.appendChild(makeTag('基礎','#7dd3fc','rgba(56,189,248,.12)','#0284c7'));
-    else sp.appendChild(makeTag('新增','#c084fc','rgba(168,85,247,.12)','#9333ea'));
+    if(isBaseEntry(g,d.num))sp.appendChild(makeBadge('基礎','#7dd3fc','rgba(56,189,248,.12)','#0284c7'));
+    else sp.appendChild(makeBadge('新增','#c084fc','rgba(168,85,247,.12)','#9333ea'));
     const btn=document.createElement('button'); btn.className='del-btn'; btn.textContent='🗑 刪除';
     btn.addEventListener('click',()=>{
       softDelete(g,d.num)
