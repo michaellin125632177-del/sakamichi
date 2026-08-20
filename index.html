@@ -298,13 +298,29 @@ body{font-family:'Segoe UI',sans-serif;background:#0e0818;color:#f0e6ff;min-heig
 .pk-note{font-size:.72rem;color:#5a4070;margin-top:6px;}
 .pk-note b{color:#c084fc;font-weight:700;}
 
-/* ── 站位圖 ── */
-.fm{overflow-x:auto;padding:3px 0 1px;margin-bottom:8px;}
+/* ── 站位圖（自動縮放至卡片寬度）── */
+.fm{overflow:hidden;padding:3px 0 1px;margin-bottom:8px;}
 .fm-inner{display:flex;flex-direction:column;gap:5px;min-width:max-content;}
 .fm-row{display:flex;align-items:center;gap:7px;}
 .fm-lbl{width:26px;flex-shrink:0;font-size:.6rem;letter-spacing:.5px;text-align:right;opacity:.7;}
 .fm-tags{display:flex;gap:4px;flex:1;justify-content:center;}
 .fm .tag{font-size:.73rem;padding:4px 8px;white-space:nowrap;}
+/* 第二段：縮小字級與間距 */
+.fm.fm-s1 .tag{font-size:.66rem;padding:3px 6px;}
+.fm.fm-s1 .fm-tags{gap:3px;}
+.fm.fm-s1 .fm-row{gap:5px;}
+/* 第三段：改為直書 — 寬度只佔一個字，所以字級反而放大回舒適大小
+   以「窄欄 + 逐字換行」達成，不用 writing-mode（它在 flex 項目裡尺寸解析不可靠）*/
+.fm.fm-vert .fm-inner{gap:8px;}
+.fm.fm-vert .fm-tags{gap:4px;align-items:flex-start;}
+.fm.fm-vert .tag{width:2em;white-space:normal;word-break:break-all;text-align:center;
+  font-size:.8rem;line-height:1.25;padding:7px 3px;border-radius:12px;}
+.fm.fm-vert .fm-lbl{width:22px;font-size:.6rem;align-self:flex-start;padding-top:7px;}
+/* 第四段：極窄螢幕再收緊一級 */
+.fm.fm-vert.fm-v2 .tag{width:1.75em;font-size:.7rem;padding:6px 2px;}
+.fm.fm-vert.fm-v2 .fm-tags{gap:3px;}
+.fm.fm-vert.fm-v2 .fm-row{gap:4px;}
+.fm.fm-vert.fm-v2 .fm-lbl{width:16px;font-size:.54rem;}
 .fm-note{font-size:.68rem;color:#5a4070;margin:2px 0 8px;padding-left:33px;}
 
 /* ── 備份 / 還原 ── */
@@ -1644,6 +1660,8 @@ function countStats(g,name){
 function switchGroup(g){
   document.querySelectorAll('.page').forEach(p=>p.classList.remove('active'));
   document.getElementById('page-'+g).classList.add('active');
+  // 分頁隱藏時 clientWidth 為 0，量不到寬度，顯示後才能決定縮放層級
+  requestAnimationFrame(()=>fitAllFormations(document.getElementById(g+'-grid')));
   document.querySelectorAll('.tab-btn').forEach(b=>b.classList.remove('active'));
   document.querySelector('.tab-btn.'+g).classList.add('active');
   if(location.hash.slice(1)!==g)history.replaceState(null,'','#'+g);
@@ -1687,13 +1705,38 @@ function buildFormation(d,g,opt){
     row.forEach(name=>{
       const isC=(d.center||[]).includes(name);
       const cLabel=isC&&d.centerLabel?d.centerLabel[d.center.indexOf(name)]:name;
-      const sp=makeTag(name,isC?opt.centerCls:opt.rowCls[ri],(isC?'★ ':'')+cLabel,g);
+      const full=(isC?'★ ':'')+cLabel;
+      const sp=makeTag(name,isC?opt.centerCls:opt.rowCls[ri],full,g);
+      sp.dataset.full=full;
+      sp.dataset.vlabel=(isC?'★':'')+name;   // 直書時省略 （center） 註記
       applyHl(sp,s,name); tags.appendChild(sp);
     });
     line.append(lbl,tags); inner.appendChild(line);
   });
   wrap.appendChild(inner);
   return wrap;
+}
+
+// 逐段縮小，直到整張隊形塞進卡片寬度為止
+function setFmMode(fm,mode){
+  fm.classList.toggle('fm-s1',mode>=1);
+  fm.classList.toggle('fm-vert',mode>=2);
+  fm.classList.toggle('fm-v2',mode>=3);
+  fm.querySelectorAll('.tag').forEach(t=>{
+    const v=mode>=2?t.dataset.vlabel:t.dataset.full;
+    if(v!==undefined&&t.textContent!==v)t.textContent=v;
+  });
+}
+function fitFormation(fm){
+  const inner=fm.querySelector('.fm-inner');
+  if(!inner||!fm.clientWidth)return;
+  for(let m=0;m<=3;m++){
+    setFmMode(fm,m);
+    if(inner.scrollWidth<=fm.clientWidth)return;
+  }
+}
+function fitAllFormations(root){
+  (root||document).querySelectorAll('.fm').forEach(fitFormation);
 }
 
 function buildNogiCard(d,s){
@@ -1806,8 +1849,10 @@ function renderG(g){
   if(!data.length){grid.innerHTML='';none.style.display='block';return;}
   none.style.display='none'; grid.innerHTML='';
   data.forEach(d=>grid.appendChild(g==='nogi'?buildNogiCard(d,s):buildRowsCard(d,g)));
+  requestAnimationFrame(()=>fitAllFormations(grid));
   if(rankPanelOpen)buildRankTable();
 }
+window.addEventListener('resize',debounce(()=>fitAllFormations(),200));
 
 // 初始化（Firestore listeners 會觸發 renderG；若 Firebase 未設定則直接渲染 base data）
 if(!db){['nogi','hinata','sakura','keyaki','aoba'].forEach(g=>renderG(g));}
