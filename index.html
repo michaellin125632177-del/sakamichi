@@ -308,6 +308,21 @@ body{font-family:'Segoe UI',sans-serif;background:#0e0818;color:#f0e6ff;min-heig
 .fm-note{font-size:.68rem;color:#5a4070;margin:2px 0 8px;padding-left:33px;}
 
 
+/* ── 生涯軌跡圖 ── */
+.mp-chart-hd{font-size:.72rem;font-weight:700;color:#7c5cb0;letter-spacing:.5px;margin-bottom:6px;}
+#mp-chart svg{width:100%;height:auto;display:block;overflow:visible;}
+.tj-grid{stroke:rgba(255,255,255,.07);stroke-width:1;}
+.tj-band{font-size:8px;fill:#6b5c8a;dominant-baseline:middle;}
+.tj-xlbl{font-size:7.5px;fill:#5a4070;text-anchor:middle;}
+.tj-line{fill:none;stroke-width:1.6;stroke-linejoin:round;stroke-linecap:round;}
+.tj-line.gap{stroke-dasharray:2.5 2.5;opacity:.5;}
+.tj-dot{cursor:pointer;}
+.tj-dot:hover{stroke:#fff;stroke-width:1.2;}
+.tj-miss{fill:#3b2a55;}
+.tj-star{fill:#ec4899;stroke:#fff;stroke-width:.8;}
+.mp-chart-cap{font-size:.68rem;color:#7c5cb0;margin-top:6px;line-height:1.5;min-height:2.1em;}
+.mp-chart-cap b{color:#e9d5ff;}
+
 /* ── 站位拖曳 ── */
 .pk-chip{touch-action:none;cursor:grab;user-select:none;}
 .pk-chip:active{cursor:grabbing;}
@@ -505,6 +520,11 @@ body{font-family:'Segoe UI',sans-serif;background:#0e0818;color:#f0e6ff;min-heig
   </div>
   <div id="mp-body">
     <div id="mp-info" style="padding:12px 14px;border-bottom:1px solid #2a1250;"></div>
+    <div id="mp-chart-wrap" style="padding:10px 12px 8px;border-bottom:1px solid #2a1250;display:none;">
+      <div class="mp-chart-hd">生涯軌跡</div>
+      <div id="mp-chart"></div>
+      <div id="mp-chart-cap" class="mp-chart-cap">點圖上的點可看該單曲</div>
+    </div>
     <div style="padding:8px 14px;border-bottom:1px solid #2a1250;">
       <button id="mp-fbtn" onclick="mpFilter()" style="width:100%;padding:8px;background:rgba(168,85,247,.15);border:1px solid #6b21a8;color:#c084fc;border-radius:8px;cursor:pointer;font-size:.8rem;font-weight:700;"></button>
     </div>
@@ -1633,6 +1653,8 @@ function openMemberPanel(g,name){
   });
   recs.sort((a,b)=>b.num-a.num);
 
+  buildTrajectory(g,name);
+
   // 篩選按鈕文字
   const fbtn=document.getElementById('mp-fbtn');
   fbtn.parentElement.style.display=recs.length?'':'none';
@@ -1659,6 +1681,98 @@ function openMemberPanel(g,name){
   }
 
   panel.classList.add('open');
+}
+
+// ── 生涯軌跡圖 ──
+// band 0=Center 1=前排 2=中排 3=後排；未選拔畫在底線
+const TJ_BANDS=['★ Center','前排','中排','後排'];
+function memberTrajectory(g,name){
+  const singles=(getData(g)||[]).slice().sort((a,b)=>a.num-b.num);
+  return singles.map(d=>{
+    const isC=(d.center||[]).includes(name);
+    let band=null,idx=-1,len=0,where='';
+    const rows=Array.isArray(d.rows)?d.rows:null;
+    if(rows){
+      for(let ri=0;ri<3;ri++){
+        const r=rows[ri]||[];
+        const at=r.indexOf(name);
+        if(at>=0){band=[3,2,1][ri];idx=at;len=r.length;where=['後排','中排','前排'][ri];break;}
+      }
+    }
+    if(band===null){   // 沒有站位資料時退回名單分區
+      if((d.fukujin||[]).includes(name)){band=2;where='福神';}
+      else if((d.back||[]).includes(name)){band=3;where='Under';}
+    }
+    if(band===null)return {num:d.num,title:d.title,selected:false};
+    if(isC){band=0;where='Center';}
+    // 在該排的中央程度：正中央=1，最邊邊=0
+    let central=1;
+    if(len>1){const mid=(len-1)/2;central=1-Math.abs(idx-mid)/mid;}
+    return {num:d.num,title:d.title,selected:true,band,where,idx,len,isC,central};
+  });
+}
+function buildTrajectory(g,name){
+  const wrap=document.getElementById('mp-chart-wrap');
+  const host=document.getElementById('mp-chart');
+  const cap=document.getElementById('mp-chart-cap');
+  const data=memberTrajectory(g,name);
+  const picked=data.filter(d=>d.selected);
+  if(picked.length<1){wrap.style.display='none';host.innerHTML='';return;}
+  wrap.style.display='';
+  const color=G_COLOR[g]||'#a855f7';
+  const W=300,H=142,L=32,R=294,TOP=15,GAP=26,MISS=119;
+  const first=picked[0].num, last=data[data.length-1].num;
+  const span=Math.max(1,last-first);
+  const X=n=>L+(n-first)/span*(R-L);
+  const Y=b=>TOP+b*GAP;
+  const NS='http://www.w3.org/2000/svg';
+  const el=(t,a)=>{const e=document.createElementNS(NS,t);for(const k in a)e.setAttribute(k,a[k]);return e;};
+  const svg=el('svg',{viewBox:'0 0 '+W+' '+H,role:'img'});
+  svg.setAttribute('aria-label',name+' 的生涯軌跡');
+
+  TJ_BANDS.forEach((lb,b)=>{
+    svg.appendChild(el('line',{x1:L,y1:Y(b),x2:R,y2:Y(b),class:'tj-grid'}));
+    const t=el('text',{x:L-5,y:Y(b),class:'tj-band','text-anchor':'end'});
+    t.textContent=lb; svg.appendChild(t);
+  });
+  svg.appendChild(el('line',{x1:L,y1:MISS,x2:R,y2:MISS,class:'tj-grid'}));
+  const mt=el('text',{x:L-5,y:MISS,class:'tj-band','text-anchor':'end'}); mt.textContent='未選拔';
+  svg.appendChild(mt);
+
+  // x 軸刻度：首、末，以及中間每 10 張
+  const ticks=[first,last];
+  for(let n=Math.ceil(first/10)*10;n<last;n+=10)if(n>first)ticks.push(n);
+  [...new Set(ticks)].forEach(n=>{
+    const t=el('text',{x:X(n),y:H-3,class:'tj-xlbl'}); t.textContent=n; svg.appendChild(t);
+  });
+
+  // 未選拔的小點
+  data.filter(d=>!d.selected&&d.num>=first).forEach(d=>{
+    svg.appendChild(el('circle',{cx:X(d.num),cy:MISS,r:1.6,class:'tj-miss'}));
+  });
+
+  // 折線：相鄰單曲用實線，中間有斷層用虛線
+  for(let i=1;i<picked.length;i++){
+    const a=picked[i-1],c=picked[i];
+    svg.appendChild(el('line',{x1:X(a.num),y1:Y(a.band),x2:X(c.num),y2:Y(c.band),
+      class:'tj-line'+(c.num-a.num>1?' gap':''),stroke:color}));
+  }
+
+  const show=d=>{
+    cap.innerHTML=d
+      ?('第'+d.num+'張《'+d.title+'》　<b>'+d.where+'</b>'+(d.len>1&&!d.isC?('　第 '+(d.idx+1)+' / '+d.len+' 位'):''))
+      :'點圖上的點可看該單曲';
+  };
+  picked.forEach(d=>{
+    const c=el('circle',{cx:X(d.num),cy:Y(d.band),r:d.isC?4:3,class:'tj-dot'+(d.isC?' tj-star':''),
+      fill:d.isC?'#ec4899':color,'fill-opacity':d.isC?1:(0.35+0.65*(d.central||0))});
+    const title=el('title'); title.textContent='第'+d.num+'張 '+d.title+'（'+d.where+'）';
+    c.appendChild(title);
+    c.addEventListener('pointerenter',()=>show(d));
+    c.addEventListener('click',()=>show(d));
+    svg.appendChild(c);
+  });
+  host.innerHTML=''; host.appendChild(svg); show(null);
 }
 
 function closeMemberPanel(){
