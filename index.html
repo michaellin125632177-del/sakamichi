@@ -819,6 +819,7 @@ function buildRankTable(){
 // 資料
 // ══════════════════════════════════════════
 const nogiBase=[
+  {num:42,title:"是非に及ばず",zh:"無可奈何",date:"2026年7月22日",total:18,center:["一ノ瀬美空"],fukujin:["賀喜遥香","一ノ瀬美空","瀬戸口心月","五百城茉央","川﨑桜","井上和","池田瑛紗","遠藤さくら","矢田萌華"],fukujinLabel:["賀喜遥香","一ノ瀬美空（center）","瀬戸口心月","五百城茉央","川﨑桜","井上和","池田瑛紗","遠藤さくら","矢田萌華"],back:["森平麗心","筒井あやめ","田村真佑","林瑠奈","菅原咲月","中西アルノ","岩本蓮加","弓木奈於","大越ひなの"],rows:[["森平麗心","筒井あやめ","田村真佑","林瑠奈","菅原咲月","中西アルノ","岩本蓮加","弓木奈於","大越ひなの"],["五百城茉央","川﨑桜","井上和","池田瑛紗","遠藤さくら","矢田萌華"],["賀喜遥香","一ノ瀬美空","瀬戸口心月"]]},
   {num:41,title:"最後に階段を駆け上がったのはいつだ？",zh:"最後一次奔上階梯是何時？",date:"2026年4月8日",total:16,center:["池田瑛紗"],fukujin:["五百城茉央","池田瑛紗","一ノ瀬美空","井上和","梅澤美波","遠藤さくら","賀喜遥香","川﨑桜","中西アルノ"],fukujinLabel:["五百城茉央","池田瑛紗（初center）","一ノ瀬美空","井上和","梅澤美波","遠藤さくら","賀喜遥香","川﨑桜","中西アルノ"],back:["小川彩","菅原咲月","田村真佑","筒井あやめ","冨里奈央","林瑠奈","弓木奈於"],rows:[["筒井あやめ","小川彩","弓木奈於","菅原咲月","田村真佑","冨里奈央","林瑠奈"],["中西アルノ","井上和","梅澤美波","賀喜遥香","川﨑桜","一ノ瀬美空"],["遠藤さくら","池田瑛紗","五百城茉央"]]},
   {num:40,title:"ビリヤニ",zh:"印度香飯",date:"2025年11月26日",total:16,center:["瀬戸口心月","矢田萌華"],fukujin:["池田瑛紗","一ノ瀬美空","井上和","遠藤さくら","賀喜遥香","川﨑桜","久保史緒里","瀬戸口心月","矢田萌華"],fukujinLabel:["池田瑛紗","一ノ瀬美空","井上和","遠藤さくら","賀喜遥香","川﨑桜","久保史緒里","瀬戸口心月（初W-center）","矢田萌華（初W-center）"],back:["梅澤美波","小川彩","岡本姫奈","菅原咲月","筒井あやめ","中西アルノ","弓木奈於"],rows:[["小川彩","弓木奈於","中西アルノ","梅澤美波","菅原咲月","筒井あやめ","岡本姫奈"],["川﨑桜","井上和","久保史緒里","一ノ瀬美空","池田瑛紗"],["賀喜遥香","瀬戸口心月","矢田萌華","遠藤さくら"]]},
   {num:39,title:"Same numbers",zh:"Same numbers",date:"2025年7月30日",total:16,center:["賀喜遥香"],fukujin:["池田瑛紗","一ノ瀬美空","井上和","梅澤美波","遠藤さくら","賀喜遥香","川﨑桜","久保史緒里","中西アルノ"],fukujinLabel:["池田瑛紗","一ノ瀬美空","井上和","梅澤美波","遠藤さくら","賀喜遥香（center）","川﨑桜","久保史緒里","中西アルノ"],back:["五百城茉央","小川彩","岡本姫奈","菅原咲月","筒井あやめ","冨里奈央","弓木奈於"],rows:[["冨里奈央","弓木奈於","菅原咲月","五百城茉央","小川彩","筒井あやめ","岡本姫奈"],["梅澤美波","中西アルノ","遠藤さくら","井上和","池田瑛紗","久保史緒里"],["川﨑桜","賀喜遥香","一ノ瀬美空"]]},
@@ -2083,9 +2084,20 @@ function buildPicker(fid){
   host._refresh=fillNames;
   renderPickerChips(fid);
 }
+// 互斥分組：福神／後排 是一組，三排站位是另一組
+// （同一人本來就會同時出現在福神和某一排，兩組之間不可互斥）
 function siblingFields(fid){
-  const pre=pickerPrefix(fid), g=pickerGroup(fid);
-  return g==='nogi'?[pre+'fukujin',pre+'back']:[pre+'row0',pre+'row1',pre+'row2'];
+  const pre=pickerPrefix(fid);
+  if(/row\d$/.test(fid))return [pre+'row0',pre+'row1',pre+'row2'];
+  if(fid.endsWith('fukujin')||fid.endsWith('back'))return [pre+'fukujin',pre+'back'];
+  return [];
+}
+// center 標星要更新的所有成員欄位
+function memberFields(fid){
+  const pre=pickerPrefix(fid);
+  return pickerGroup(fid)==='nogi'
+    ? [pre+'fukujin',pre+'back',pre+'row0',pre+'row1',pre+'row2']
+    : [pre+'row0',pre+'row1',pre+'row2'];
 }
 function refreshPickerNames(fid){
   const host=document.getElementById('pk-'+fid);
@@ -2108,12 +2120,12 @@ function renderPickerChips(fid){
       pickers[fid]=list.filter(n=>n!==name);
       renderPickerChips(fid); refreshPickerNames(fid);
       if(!isCenterField)siblingFields(fid).forEach(f=>{if(f!==fid)refreshPickerNames(f);});
-      if(isCenterField)siblingFields(fid).forEach(f=>renderPickerChips(f));
+      if(isCenterField)memberFields(fid).forEach(f=>renderPickerChips(f));
     });
     chip.appendChild(x); chips.appendChild(chip);
   });
   note.innerHTML=list.length?('已選 <b>'+list.length+'</b> 人'):'尚未選擇';
-  if(isCenterField)siblingFields(fid).forEach(f=>{if((pickers[f]||[]).length)renderPickerChips(f);});
+  if(isCenterField)memberFields(fid).forEach(f=>{if((pickers[f]||[]).length)renderPickerChips(f);});
 }
 function resetPickers(prefix){
   pickerFields(prefix||'a-').forEach(f=>{pickers[f]=[];});
@@ -2135,8 +2147,9 @@ function openAddModal(){
 function toggleAddSec(){
   const g=document.getElementById('a-group').value;
   document.getElementById('a-nogi-sec').style.display=g==='nogi'?'block':'none';
-  document.getElementById('a-rows-sec').style.display=g!=='nogi'?'block':'none';
-  document.getElementById('a-rows-title').textContent=g==='hinata'?'日向坂 — 成員隊形':g==='keyaki'?'欅坂 — 成員隊形':g==='aoba'?'青葉坂 — 成員隊形':'櫻坂 — 成員隊形';
+  document.getElementById('a-rows-sec').style.display='block';   // 乃木坂也可填站位
+  document.getElementById('a-rows-title').textContent=
+    {nogi:'乃木坂 — 站位（可留空）',hinata:'日向坂 — 成員隊形',keyaki:'欅坂 — 成員隊形',aoba:'青葉坂 — 成員隊形'}[g]||'櫻坂 — 成員隊形';
   resetPickers(); rebuildPickers();
 }
 function doAdd(){
@@ -2158,6 +2171,8 @@ function doAdd(){
     entry.fukujinLabel=fukujin.map(n=>center.includes(n)?n+(center.length>1?'（W-center）':'（center）'):n);
     entry.back=(pickers['a-back']||[]).slice();
     entry.total=entry.fukujin.length+entry.back.length;
+    const nr=[0,1,2].map(i=>(pickers['a-row'+i]||[]).slice());
+    if(nr.some(r=>r.length))entry.rows=nr;   // 有填才寫入
   } else {
     const r0=(pickers['a-row0']||[]).slice();
     const r1=(pickers['a-row1']||[]).slice();
@@ -2190,22 +2205,19 @@ function openEditModal(g,num){
   document.getElementById('e-date').value=d.date;
   const isNogi=g==='nogi';
   document.getElementById('e-nogi-sec').style.display=isNogi?'block':'none';
-  document.getElementById('e-rows-sec').style.display=!isNogi?'block':'none';
-  if(!isNogi){
-    const labels={hinata:'日向坂 — 成員隊形',sakura:'櫻坂 — 成員隊形',keyaki:'欅坂 — 成員隊形',aoba:'青葉坂 — 成員隊形'};
-    document.getElementById('e-rows-title').textContent=labels[g]||'成員隊形';
-  }
+  document.getElementById('e-rows-sec').style.display='block';   // 乃木坂也可編輯站位
+  const labels={nogi:'乃木坂 — 站位（可留空）',hinata:'日向坂 — 成員隊形',sakura:'櫻坂 — 成員隊形',keyaki:'欅坂 — 成員隊形',aoba:'青葉坂 — 成員隊形'};
+  document.getElementById('e-rows-title').textContent=labels[g]||'成員隊形';
   resetPickers('e-');
   setPicker('e-center',d.center||[]);
   if(isNogi){
     setPicker('e-fukujin',d.fukujin||[]);
     setPicker('e-back',d.back||[]);
-  } else {
-    const rows=d.rows||[[],[],[]];
-    setPicker('e-row0',rows[0]||[]);
-    setPicker('e-row1',rows[1]||[]);
-    setPicker('e-row2',rows[2]||[]);
   }
+  const rows=d.rows||[[],[],[]];
+  setPicker('e-row0',rows[0]||[]);
+  setPicker('e-row1',rows[1]||[]);
+  setPicker('e-row2',rows[2]||[]);
   rebuildPickers('e-');
   switchMtab('info');
   document.getElementById('e-msg').style.display='none';
@@ -2234,6 +2246,7 @@ function doSaveEdit(){
     patch.fukujinLabel=fukujin.map(n=>center.includes(n)?n+(center.length>1?'（W-center）':'（center）'):n);
     patch.back=(pickers['e-back']||[]).slice();
     patch.total=patch.fukujin.length+patch.back.length;
+    patch.rows=[0,1,2].map(i=>(pickers['e-row'+i]||[]).slice());   // 全空＝刻意清除站位
   } else {
     const r0=(pickers['e-row0']||[]).slice();
     const r1=(pickers['e-row1']||[]).slice();
