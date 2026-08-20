@@ -115,9 +115,9 @@ body{font-family:'Segoe UI',sans-serif;background:#0e0818;color:#f0e6ff;min-heig
 .ld{width:9px;height:9px;border-radius:50%;display:inline-block;margin-right:3px;vertical-align:middle;}
 
 /* ── Grid / Cards ── */
-.grid{padding:10px 12px;display:grid;grid-template-columns:1fr;gap:10px;}
-@media(min-width:560px){.grid{grid-template-columns:repeat(auto-fill,minmax(305px,1fr));padding:14px 20px;gap:12px;}}
-.card{border-radius:12px;padding:12px;transition:transform .2s,box-shadow .2s;display:flex;flex-direction:column;min-width:0;}
+.grid{padding:10px 12px;display:grid;grid-template-columns:max-content;gap:10px;justify-content:start;}
+@media(min-width:560px){.grid{grid-template-columns:repeat(3,max-content);padding:14px 20px;gap:12px;}}
+.card{border-radius:12px;padding:12px;transition:transform .2s,box-shadow .2s;display:flex;flex-direction:column;min-width:300px;}
 .card:hover{transform:translateY(-2px);}
 .card-nogi{background:#180930;border:1px solid #2a1250;}
 .card-nogi:hover{box-shadow:0 6px 22px rgba(147,51,234,.18);}
@@ -298,30 +298,25 @@ body{font-family:'Segoe UI',sans-serif;background:#0e0818;color:#f0e6ff;min-heig
 .pk-note{font-size:.72rem;color:#5a4070;margin-top:6px;}
 .pk-note b{color:#c084fc;font-weight:700;}
 
-/* ── 站位圖（自動縮放至卡片寬度）── */
-.fm{overflow:hidden;padding:3px 0 1px;margin-bottom:8px;}
+/* ── 站位圖（固定橫式，卡片依內容撐開，由頁面捲動）── */
+.fm{padding:3px 0 1px;margin-bottom:8px;}
 .fm-inner{display:flex;flex-direction:column;gap:5px;min-width:max-content;}
 .fm-row{display:flex;align-items:center;gap:7px;}
 .fm-lbl{width:26px;flex-shrink:0;font-size:.6rem;letter-spacing:.5px;text-align:right;opacity:.7;}
 .fm-tags{display:flex;gap:4px;flex:1;justify-content:center;}
 .fm .tag{font-size:.73rem;padding:4px 8px;white-space:nowrap;}
-/* 第二段：縮小字級與間距 */
-.fm.fm-s1 .tag{font-size:.66rem;padding:3px 6px;}
-.fm.fm-s1 .fm-tags{gap:3px;}
-.fm.fm-s1 .fm-row{gap:5px;}
-/* 第三段：改為直書 — 寬度只佔一個字，所以字級反而放大回舒適大小
-   以「窄欄 + 逐字換行」達成，不用 writing-mode（它在 flex 項目裡尺寸解析不可靠）*/
-.fm.fm-vert .fm-inner{gap:8px;}
-.fm.fm-vert .fm-tags{gap:4px;align-items:flex-start;}
-.fm.fm-vert .tag{width:2em;white-space:normal;word-break:break-all;text-align:center;
-  font-size:.8rem;line-height:1.25;padding:7px 3px;border-radius:12px;}
-.fm.fm-vert .fm-lbl{width:22px;font-size:.6rem;align-self:flex-start;padding-top:7px;}
-/* 第四段：極窄螢幕再收緊一級 */
-.fm.fm-vert.fm-v2 .tag{width:1.75em;font-size:.7rem;padding:6px 2px;}
-.fm.fm-vert.fm-v2 .fm-tags{gap:3px;}
-.fm.fm-vert.fm-v2 .fm-row{gap:4px;}
-.fm.fm-vert.fm-v2 .fm-lbl{width:16px;font-size:.54rem;}
 .fm-note{font-size:.68rem;color:#5a4070;margin:2px 0 8px;padding-left:33px;}
+
+
+/* ── 站位拖曳 ── */
+.pk-chip{touch-action:none;cursor:grab;user-select:none;}
+.pk-chip:active{cursor:grabbing;}
+.pk-chip.pk-dragging{opacity:.35;}
+.pk-ghost{position:fixed;z-index:1200;pointer-events:none;transform:translate(-50%,-50%) scale(1.06);
+  box-shadow:0 6px 20px rgba(0,0,0,.55);opacity:.95;}
+.pk-chips.pk-drop{outline:1px dashed #a855f7;outline-offset:3px;border-radius:8px;}
+.pk-caret{width:2px;align-self:stretch;background:#a855f7;border-radius:1px;margin:0 -1px;}
+.pk-hint{font-size:.7rem;color:#5a4070;margin-top:6px;}
 
 /* ── 備份 / 還原 ── */
 .bk-desc{font-size:.78rem;color:#9370c0;line-height:1.7;margin-bottom:10px;}
@@ -1698,8 +1693,6 @@ function countStats(g,name){
 function switchGroup(g){
   document.querySelectorAll('.page').forEach(p=>p.classList.remove('active'));
   document.getElementById('page-'+g).classList.add('active');
-  // 分頁隱藏時 clientWidth 為 0，量不到寬度，顯示後才能決定縮放層級
-  requestAnimationFrame(()=>fitAllFormations(document.getElementById(g+'-grid')));
   document.querySelectorAll('.tab-btn').forEach(b=>b.classList.remove('active'));
   document.querySelector('.tab-btn.'+g).classList.add('active');
   if(location.hash.slice(1)!==g)history.replaceState(null,'','#'+g);
@@ -1745,36 +1738,12 @@ function buildFormation(d,g,opt){
       const cLabel=isC&&d.centerLabel?d.centerLabel[d.center.indexOf(name)]:name;
       const full=(isC?'★ ':'')+cLabel;
       const sp=makeTag(name,isC?opt.centerCls:opt.rowCls[ri],full,g);
-      sp.dataset.full=full;
-      sp.dataset.vlabel=(isC?'★':'')+name;   // 直書時省略 （center） 註記
       applyHl(sp,s,name); tags.appendChild(sp);
     });
     line.append(lbl,tags); inner.appendChild(line);
   });
   wrap.appendChild(inner);
   return wrap;
-}
-
-// 逐段縮小，直到整張隊形塞進卡片寬度為止
-function setFmMode(fm,mode){
-  fm.classList.toggle('fm-s1',mode>=1);
-  fm.classList.toggle('fm-vert',mode>=2);
-  fm.classList.toggle('fm-v2',mode>=3);
-  fm.querySelectorAll('.tag').forEach(t=>{
-    const v=mode>=2?t.dataset.vlabel:t.dataset.full;
-    if(v!==undefined&&t.textContent!==v)t.textContent=v;
-  });
-}
-function fitFormation(fm){
-  const inner=fm.querySelector('.fm-inner');
-  if(!inner||!fm.clientWidth)return;
-  for(let m=0;m<=3;m++){
-    setFmMode(fm,m);
-    if(inner.scrollWidth<=fm.clientWidth)return;
-  }
-}
-function fitAllFormations(root){
-  (root||document).querySelectorAll('.fm').forEach(fitFormation);
 }
 
 function buildNogiCard(d,s){
@@ -1887,10 +1856,8 @@ function renderG(g){
   if(!data.length){grid.innerHTML='';none.style.display='block';return;}
   none.style.display='none'; grid.innerHTML='';
   data.forEach(d=>grid.appendChild(g==='nogi'?buildNogiCard(d,s):buildRowsCard(d,g)));
-  requestAnimationFrame(()=>fitAllFormations(grid));
   if(rankPanelOpen)buildRankTable();
 }
-window.addEventListener('resize',debounce(()=>fitAllFormations(),200));
 
 // 初始化（Firestore listeners 會觸發 renderG；若 Firebase 未設定則直接渲染 base data）
 if(!db){['nogi','hinata','sakura','keyaki','aoba'].forEach(g=>renderG(g));}
@@ -2115,6 +2082,11 @@ function renderPickerChips(fid){
     const chip=document.createElement('span');
     chip.className='pk-chip'+(!isCenterField&&centers.includes(name)?' is-center':'');
     chip.append(document.createTextNode((!isCenterField&&centers.includes(name)?'★ ':'')+name));
+    chip.title='可拖曳調整位置';
+    chip.addEventListener('pointerdown',ev=>{
+      if(ev.target.tagName==='BUTTON')return;
+      beginChipDrag(ev,chip,fid,name);
+    });
     const x=document.createElement('button'); x.type='button'; x.textContent='✕'; x.title='移除';
     x.addEventListener('click',()=>{
       pickers[fid]=list.filter(n=>n!==name);
@@ -2124,9 +2096,91 @@ function renderPickerChips(fid){
     });
     chip.appendChild(x); chips.appendChild(chip);
   });
-  note.innerHTML=list.length?('已選 <b>'+list.length+'</b> 人'):'尚未選擇';
+  note.innerHTML=list.length
+    ?('已選 <b>'+list.length+'</b> 人'+(siblingFields(fid).length>1?'　·　可直接拖曳成員調整排別與左右位置':''))
+    :'尚未選擇';
   if(isCenterField)memberFields(fid).forEach(f=>{if((pickers[f]||[]).length)renderPickerChips(f);});
 }
+// ── 拖曳排位：滑鼠與觸控共用 Pointer Events ──
+let dragCtx=null;
+function chipsHost(fid){
+  const h=document.getElementById('pk-'+fid);
+  return h?h.querySelector('.pk-chips'):null;
+}
+function dropTargets(fid){
+  return siblingFields(fid).map(chipsHost).filter(Boolean);
+}
+function clearDropUI(){
+  document.querySelectorAll('.pk-chips.pk-drop').forEach(e=>e.classList.remove('pk-drop'));
+  document.querySelectorAll('.pk-caret').forEach(e=>e.remove());
+}
+// 依游標 x 座標算出插入位置
+function caretIndex(host,x){
+  const chips=[...host.querySelectorAll('.pk-chip')].filter(c=>!c.classList.contains('pk-dragging'));
+  for(let i=0;i<chips.length;i++){
+    const r=chips[i].getBoundingClientRect();
+    if(x<r.left+r.width/2)return i;
+  }
+  return chips.length;
+}
+function showCaret(host,idx){
+  document.querySelectorAll('.pk-caret').forEach(e=>e.remove());
+  const caret=document.createElement('span'); caret.className='pk-caret';
+  const chips=[...host.querySelectorAll('.pk-chip')].filter(c=>!c.classList.contains('pk-dragging'));
+  if(idx>=chips.length)host.appendChild(caret); else host.insertBefore(caret,chips[idx]);
+}
+function beginChipDrag(e,chip,fid,name){
+  if(e.button!==undefined&&e.button!==0)return;
+  const targets=dropTargets(fid);
+  if(targets.length<2&&(pickers[fid]||[]).length<2)return;   // 無處可拖就不啟動
+  const startX=e.clientX,startY=e.clientY;
+  let started=false,ghost=null;
+  const onMove=ev=>{
+    if(!started){
+      if(Math.abs(ev.clientX-startX)+Math.abs(ev.clientY-startY)<6)return;
+      started=true;
+      chip.classList.add('pk-dragging');
+      ghost=chip.cloneNode(true);
+      const q=ghost.querySelector('button'); if(q)q.remove();
+      ghost.className='pk-chip pk-ghost'+(chip.classList.contains('is-center')?' is-center':'');
+      document.body.appendChild(ghost);
+      targets.forEach(t=>t.classList.add('pk-drop'));
+    }
+    ghost.style.left=ev.clientX+'px'; ghost.style.top=ev.clientY+'px';
+    const host=targets.find(t=>{
+      const r=t.getBoundingClientRect();
+      return ev.clientX>=r.left-14&&ev.clientX<=r.right+14&&ev.clientY>=r.top-14&&ev.clientY<=r.bottom+14;
+    });
+    dragCtx=host?{host,idx:caretIndex(host,ev.clientX)}:null;
+    if(host)showCaret(host,dragCtx.idx); else document.querySelectorAll('.pk-caret').forEach(x=>x.remove());
+  };
+  const onUp=()=>{
+    document.removeEventListener('pointermove',onMove);
+    document.removeEventListener('pointerup',onUp);
+    document.removeEventListener('pointercancel',onUp);
+    if(ghost)ghost.remove();
+    chip.classList.remove('pk-dragging');
+    clearDropUI();
+    if(started&&dragCtx){
+      const toFid=dragCtx.host.parentElement.id.replace(/^pk-/,'');
+      let idx=dragCtx.idx;
+      const from=pickers[fid]||[];
+      const at=from.indexOf(name);
+      if(at>=0)from.splice(at,1);
+      if(toFid===fid&&at>=0&&at<idx)idx--;      // 同排前移後索引要回退
+      const to=pickers[toFid]=pickers[toFid]||[];
+      to.splice(Math.max(0,Math.min(idx,to.length)),0,name);
+      renderPickerChips(fid);
+      if(toFid!==fid)renderPickerChips(toFid);
+      siblingFields(fid).forEach(refreshPickerNames);
+    }
+    dragCtx=null;
+  };
+  document.addEventListener('pointermove',onMove);
+  document.addEventListener('pointerup',onUp);
+  document.addEventListener('pointercancel',onUp);
+}
+
 function resetPickers(prefix){
   pickerFields(prefix||'a-').forEach(f=>{pickers[f]=[];});
 }
