@@ -567,20 +567,20 @@ body{font-family:'Segoe UI',sans-serif;background:#0e0818;color:#f0e6ff;min-heig
         <div class="mr"><label>曲名（日文）</label><input type="text" id="e-title"></div>
         <div class="mr"><label>曲名（中文）</label><input type="text" id="e-zh"></div>
         <div class="mr"><label>發行日期</label><input type="text" id="e-date"></div>
-        <div class="mr"><label>Center（多人用逗號分隔）</label><input type="text" id="e-center"></div>
+        <div class="mr"><label>Center</label><div class="pk" id="pk-e-center"></div></div>
       </div>
     </div>
     <div class="mtab-c" id="mtab-members">
       <div class="mg" id="e-nogi-sec">
         <h3>乃木坂 — 選拔名單</h3>
-        <div class="mr"><label>福神成員（逗號分隔）</label><textarea id="e-fukujin"></textarea><div class="mhint">★ Center 標注自動更新</div></div>
-        <div class="mr"><label>後排選拔（逗號分隔）</label><textarea id="e-back"></textarea></div>
+        <div class="mr"><label>福神成員</label><div class="pk" id="pk-e-fukujin"></div><div class="mhint">★ Center 標注自動更新</div></div>
+        <div class="mr"><label>後排選拔</label><div class="pk" id="pk-e-back"></div></div>
       </div>
       <div class="mg" id="e-rows-sec" style="display:none">
         <h3 id="e-rows-title">成員隊形</h3>
-        <div class="mr"><label>後排</label><textarea id="e-row0"></textarea></div>
-        <div class="mr"><label>中排</label><textarea id="e-row1"></textarea></div>
-        <div class="mr"><label>前排</label><textarea id="e-row2"></textarea></div>
+        <div class="mr"><label>後排</label><div class="pk" id="pk-e-row0"></div></div>
+        <div class="mr"><label>中排</label><div class="pk" id="pk-e-row1"></div></div>
+        <div class="mr"><label>前排</label><div class="pk" id="pk-e-row2"></div></div>
       </div>
     </div>
     <div id="e-msg" class="mmsg"></div>
@@ -1642,7 +1642,14 @@ function showMsg(elId,type,text,auto){
 function parseCSV(s){return s.split(',').map(x=>x.trim()).filter(Boolean);}
 
 // ── 成員選擇器（先選期別 → 再選成員）──
-const PICKER_FIELDS=['a-center','a-fukujin','a-back','a-row0','a-row1','a-row2'];
+const PICKER_SUFFIX=['center','fukujin','back','row0','row1','row2'];
+const PICKER_FIELDS=PICKER_SUFFIX.map(x=>'a-'+x);
+// 選擇器同時服務「新增」(a-) 與「編輯」(e-) 兩個視窗
+function pickerPrefix(fid){return fid.slice(0,2);}
+function pickerGroup(fid){
+  return pickerPrefix(fid)==='e-'?(editState.g||'nogi'):document.getElementById('a-group').value;
+}
+function pickerFields(prefix){return PICKER_SUFFIX.map(x=>prefix+x);}
 const pickers={};              // fieldId -> [成員名]
 const MANUAL='__manual__';
 function genLabel(n){return Number(n)===0?'兼任／其他':n+'期生';}
@@ -1665,16 +1672,14 @@ function membersOf(g,gen){
 }
 // 已被其他欄位選走的成員（同一張單曲不該重複出現）
 function takenElsewhere(fid){
-  const g=document.getElementById('a-group').value;
-  const sibs=g==='nogi'?['a-fukujin','a-back']:['a-row0','a-row1','a-row2'];
   const set=new Set();
-  sibs.filter(f=>f!==fid).forEach(f=>(pickers[f]||[]).forEach(n=>set.add(n)));
+  siblingFields(fid).filter(f=>f!==fid).forEach(f=>(pickers[f]||[]).forEach(n=>set.add(n)));
   return set;
 }
 function buildPicker(fid){
   const host=document.getElementById('pk-'+fid);
   if(!host)return;
-  const g=document.getElementById('a-group').value;
+  const g=pickerGroup(fid);
   pickers[fid]=pickers[fid]||[];
   host.innerHTML='';
 
@@ -1727,7 +1732,7 @@ function buildPicker(fid){
     manual.value='';
     renderPickerChips(fid);
     // Center 之外的欄位互斥，重建同組欄位的可選清單
-    if(fid!=='a-center')siblingFields().forEach(f=>{if(f!==fid)refreshPickerNames(f);});
+    if(!fid.endsWith('center'))siblingFields(fid).forEach(f=>{if(f!==fid)refreshPickerNames(f);});
     fillNames(); syncAdd();
   });
 
@@ -1738,9 +1743,9 @@ function buildPicker(fid){
   host._refresh=fillNames;
   renderPickerChips(fid);
 }
-function siblingFields(){
-  const g=document.getElementById('a-group').value;
-  return g==='nogi'?['a-fukujin','a-back']:['a-row0','a-row1','a-row2'];
+function siblingFields(fid){
+  const pre=pickerPrefix(fid), g=pickerGroup(fid);
+  return g==='nogi'?[pre+'fukujin',pre+'back']:[pre+'row0',pre+'row1',pre+'row2'];
 }
 function refreshPickerNames(fid){
   const host=document.getElementById('pk-'+fid);
@@ -1749,31 +1754,35 @@ function refreshPickerNames(fid){
 function renderPickerChips(fid){
   const host=document.getElementById('pk-'+fid); if(!host)return;
   const chips=host.querySelector('.pk-chips'); const note=host.querySelector('.pk-note');
+  if(!chips||!note)return;   // 尚未 buildPicker，略過（重建時會由該欄位自己繪製）
   const list=pickers[fid]||[];
   chips.innerHTML='';
-  const centers=pickers['a-center']||[];
+  const isCenterField=fid.endsWith('center');
+  const centers=pickers[pickerPrefix(fid)+'center']||[];
   list.forEach(name=>{
     const chip=document.createElement('span');
-    chip.className='pk-chip'+(fid!=='a-center'&&centers.includes(name)?' is-center':'');
-    chip.append(document.createTextNode((fid!=='a-center'&&centers.includes(name)?'★ ':'')+name));
+    chip.className='pk-chip'+(!isCenterField&&centers.includes(name)?' is-center':'');
+    chip.append(document.createTextNode((!isCenterField&&centers.includes(name)?'★ ':'')+name));
     const x=document.createElement('button'); x.type='button'; x.textContent='✕'; x.title='移除';
     x.addEventListener('click',()=>{
       pickers[fid]=list.filter(n=>n!==name);
       renderPickerChips(fid); refreshPickerNames(fid);
-      if(fid!=='a-center')siblingFields().forEach(f=>{if(f!==fid)refreshPickerNames(f);});
-      if(fid==='a-center')siblingFields().forEach(f=>renderPickerChips(f));
+      if(!isCenterField)siblingFields(fid).forEach(f=>{if(f!==fid)refreshPickerNames(f);});
+      if(isCenterField)siblingFields(fid).forEach(f=>renderPickerChips(f));
     });
     chip.appendChild(x); chips.appendChild(chip);
   });
   note.innerHTML=list.length?('已選 <b>'+list.length+'</b> 人'):'尚未選擇';
-  if(fid==='a-center')siblingFields().forEach(f=>{if((pickers[f]||[]).length)renderPickerChips(f);});
+  if(isCenterField)siblingFields(fid).forEach(f=>{if((pickers[f]||[]).length)renderPickerChips(f);});
 }
-function resetPickers(){
-  PICKER_FIELDS.forEach(f=>{pickers[f]=[];});
+function resetPickers(prefix){
+  pickerFields(prefix||'a-').forEach(f=>{pickers[f]=[];});
 }
-function rebuildPickers(){
-  PICKER_FIELDS.forEach(f=>buildPicker(f));
+function rebuildPickers(prefix){
+  pickerFields(prefix||'a-').forEach(f=>buildPicker(f));
 }
+// 預先載入既有名單（編輯用）
+function setPicker(fid,list){pickers[fid]=(list||[]).slice();}
 
 function openAddModal(){
   const h=location.hash.slice(1);
@@ -1839,7 +1848,6 @@ function openEditModal(g,num){
   document.getElementById('e-title').value=d.title;
   document.getElementById('e-zh').value=d.zh;
   document.getElementById('e-date').value=d.date;
-  document.getElementById('e-center').value=d.center.join(',');
   const isNogi=g==='nogi';
   document.getElementById('e-nogi-sec').style.display=isNogi?'block':'none';
   document.getElementById('e-rows-sec').style.display=!isNogi?'block':'none';
@@ -1847,15 +1855,18 @@ function openEditModal(g,num){
     const labels={hinata:'日向坂 — 成員隊形',sakura:'櫻坂 — 成員隊形',keyaki:'欅坂 — 成員隊形',aoba:'青葉坂 — 成員隊形'};
     document.getElementById('e-rows-title').textContent=labels[g]||'成員隊形';
   }
+  resetPickers('e-');
+  setPicker('e-center',d.center||[]);
   if(isNogi){
-    document.getElementById('e-fukujin').value=(d.fukujin||[]).join(',');
-    document.getElementById('e-back').value=(d.back||[]).join(',');
+    setPicker('e-fukujin',d.fukujin||[]);
+    setPicker('e-back',d.back||[]);
   } else {
     const rows=d.rows||[[],[],[]];
-    document.getElementById('e-row0').value=(rows[0]||[]).join(',');
-    document.getElementById('e-row1').value=(rows[1]||[]).join(',');
-    document.getElementById('e-row2').value=(rows[2]||[]).join(',');
+    setPicker('e-row0',rows[0]||[]);
+    setPicker('e-row1',rows[1]||[]);
+    setPicker('e-row2',rows[2]||[]);
   }
+  rebuildPickers('e-');
   switchMtab('info');
   document.getElementById('e-msg').style.display='none';
   openModal('editModal');
@@ -1871,20 +1882,23 @@ function doSaveEdit(){
   const title=document.getElementById('e-title').value.trim();
   const zh=document.getElementById('e-zh').value.trim()||title;
   const date=document.getElementById('e-date').value.trim();
-  const center=parseCSV(document.getElementById('e-center').value);
-  if(!title||!date||!center.length){showMsg('e-msg','err','請填寫必填欄位',false);return;}
+  const center=(pickers['e-center']||[]).slice();
+  if(!title||!date){showMsg('e-msg','err','請填寫曲名與發行日期',false);return;}
+  if(!center.length){showMsg('e-msg','err','請選擇 Center',false);return;}
   const isNogi=g==='nogi';
   let patch={title,zh,date,center};
   if(isNogi){
-    const fukujin=parseCSV(document.getElementById('e-fukujin').value);
+    const fukujin=(pickers['e-fukujin']||[]).slice();
+    if(!fukujin.length){showMsg('e-msg','err','請選擇福神成員',false);return;}
     patch.fukujin=fukujin;
     patch.fukujinLabel=fukujin.map(n=>center.includes(n)?n+(center.length>1?'（W-center）':'（center）'):n);
-    patch.back=parseCSV(document.getElementById('e-back').value);
+    patch.back=(pickers['e-back']||[]).slice();
     patch.total=patch.fukujin.length+patch.back.length;
   } else {
-    const r0=parseCSV(document.getElementById('e-row0').value);
-    const r1=parseCSV(document.getElementById('e-row1').value);
-    const r2=parseCSV(document.getElementById('e-row2').value);
+    const r0=(pickers['e-row0']||[]).slice();
+    const r1=(pickers['e-row1']||[]).slice();
+    const r2=(pickers['e-row2']||[]).slice();
+    if(!r0.length&&!r1.length&&!r2.length){showMsg('e-msg','err','請至少選擇一位選拔成員',false);return;}
     patch.rows=[r0,r1,r2]; patch.total=r0.length+r1.length+r2.length;
   }
   if(db){
