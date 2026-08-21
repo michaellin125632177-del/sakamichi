@@ -300,6 +300,14 @@ body{font-family:'Segoe UI',sans-serif;background:#0e0818;color:#f0e6ff;min-heig
 .pk-note{font-size:.72rem;color:#5a4070;margin-top:6px;}
 .pk-note b{color:#c084fc;font-weight:700;}
 
+/* ── 社群連結 ── */
+.sns-link{display:inline-flex;align-items:center;justify-content:center;vertical-align:middle;
+  width:22px;height:22px;margin-left:7px;border-radius:6px;flex-shrink:0;
+  background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.14);transition:all .18s;}
+.sns-link:hover{background:linear-gradient(45deg,#f09433,#dc2743,#bc1888);border-color:transparent;transform:translateY(-1px);}
+.sns-link svg{width:13px;height:13px;fill:none;stroke:#e9d5ff;stroke-width:1.9;}
+.sns-link:hover svg{stroke:#fff;}
+
 /* ── 登入狀態 ── */
 body.is-guest .edit-only{display:none!important;}
 #auth-btn{max-width:170px;overflow:hidden;text-overflow:ellipsis;}
@@ -649,6 +657,11 @@ body.is-guest .edit-only{display:none!important;}
       <label>畢業日期 <span style="font-weight:400;color:#5a4070;">（現役成員請留空）</span></label>
       <input type="date" id="me-grad">
       <div class="me-hint">填入畢業日期後，成員面板會顯示「已畢業」狀態</div>
+    </div>
+    <div class="me-field">
+      <label>Instagram</label>
+      <input type="text" id="me-ig" placeholder="帳號或完整網址，例如 asukasaito_official">
+      <div class="me-hint">貼整串網址也可以，會自動取出帳號；留空則不顯示圖示</div>
     </div>
     <div class="me-actions">
       <button class="me-save" onclick="saveMemEdit()">儲存</button>
@@ -1547,6 +1560,7 @@ function openAddMember(){
   document.getElementById('me-joined').value='';
   document.getElementById('me-gen').value='1';
   document.getElementById('me-grad').value='';
+  document.getElementById('me-ig').value='';
   document.getElementById('me-restore').style.display='none';
   openModal('memberEditModal');
 }
@@ -1563,6 +1577,7 @@ function openMemberEdit(g,name){
   document.getElementById('me-joined').value=info.joined||'';
   document.getElementById('me-gen').value=String(info.gen||1);
   document.getElementById('me-grad').value=info.grad||'';
+  document.getElementById('me-ig').value=info.ig||'';
   const ov=loadMemberOverrides();
   document.getElementById('me-restore').style.display=((ov[g]||{})[name])?'':'none';
   openModal('memberEditModal');
@@ -1576,6 +1591,7 @@ function saveMemEdit(){
     joined:document.getElementById('me-joined').value||undefined,
     gen:parseInt(document.getElementById('me-gen').value)||1,
     grad:document.getElementById('me-grad').value||undefined,
+    ig:normalizeIg(document.getElementById('me-ig').value)||undefined,
   };
   Object.keys(data).forEach(k=>data[k]===undefined&&delete data[k]);
   saveMemberDoc(g,name,data)
@@ -1673,6 +1689,36 @@ function refreshRoster(){
   });
 }
 
+// ── 社群帳號 ──
+// 允許貼完整網址、@開頭或純帳號，一律正規化成帳號本身
+function normalizeIg(v){
+  let t=(v||'').trim();
+  if(!t)return '';
+  const m=/instagram\.com\/([^/?#\s]+)/i.exec(t);
+  if(m)t=m[1];
+  t=t.replace(/^@+/,'').replace(/\/+$/,'').trim();
+  return /^[A-Za-z0-9._]{1,30}$/.test(t)?t:'';
+}
+function igUrl(handle){return 'https://www.instagram.com/'+encodeURIComponent(handle)+'/';}
+function buildIgLink(handle){
+  const a=document.createElement('a');
+  a.className='sns-link';
+  a.href=igUrl(handle);
+  a.target='_blank'; a.rel='noopener noreferrer';
+  a.title='Instagram @'+handle;
+  a.setAttribute('aria-label','Instagram @'+handle);
+  a.addEventListener('click',e=>e.stopPropagation());
+  const NS='http://www.w3.org/2000/svg';
+  const svg=document.createElementNS(NS,'svg');
+  svg.setAttribute('viewBox','0 0 24 24');
+  const mk=(t,at)=>{const e=document.createElementNS(NS,t);for(const k in at)e.setAttribute(k,at[k]);return e;};
+  svg.appendChild(mk('rect',{x:2.5,y:2.5,width:19,height:19,rx:5.5,'stroke-linejoin':'round'}));
+  svg.appendChild(mk('circle',{cx:12,cy:12,r:4.4}));
+  svg.appendChild(mk('circle',{cx:17.4,cy:6.6,r:1.15,fill:'currentColor',stroke:'none'}));
+  a.appendChild(svg);
+  return a;
+}
+
 // ── 成員面板 ──
 const G_COLOR={nogi:'#a855f7',hinata:'#38bdf8',sakura:'#94a3b8',keyaki:'#6ee7b7',aoba:'#22d3ee'};
 let memberPanelOpen=false, mpState={g:null,name:null};
@@ -1700,7 +1746,10 @@ function openMemberPanel(g,name){
   panel.style.borderColor=color;
 
   const info=getMemberInfo(g,name);
-  document.getElementById('mp-name').textContent=name;
+  const nameEl=document.getElementById('mp-name');
+  nameEl.textContent=name;
+  const ig=normalizeIg(info&&info.ig);
+  if(ig)nameEl.appendChild(buildIgLink(ig));
 
   let genTxt='';
   if(info){
