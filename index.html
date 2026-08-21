@@ -7,6 +7,7 @@
 <link rel="manifest" href="manifest.json">
 <script src="https://www.gstatic.com/firebasejs/10.14.0/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.14.0/firebase-firestore-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.14.0/firebase-auth-compat.js"></script>
 <meta name="theme-color" content="#0e0818">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-capable" content="yes">
@@ -299,6 +300,13 @@ body{font-family:'Segoe UI',sans-serif;background:#0e0818;color:#f0e6ff;min-heig
 .pk-note{font-size:.72rem;color:#5a4070;margin-top:6px;}
 .pk-note b{color:#c084fc;font-weight:700;}
 
+/* ── 登入狀態 ── */
+body.is-guest .edit-only{display:none!important;}
+#auth-btn{max-width:170px;overflow:hidden;text-overflow:ellipsis;}
+#auth-btn.signed-in{border-color:#22c55e;color:#86efac;background:rgba(34,197,94,.1);}
+.auth-uid{font-size:.72rem;color:#9370c0;line-height:1.7;margin-bottom:8px;word-break:break-all;}
+.auth-uid code{background:#0e0818;border:1px solid #4a2d7a;border-radius:5px;padding:2px 6px;color:#e9d5ff;}
+
 /* ── 分享連結 ── */
 .card-share{padding:5px 12px;border-radius:7px;font-size:.76rem;cursor:pointer;transition:all .18s;
   border:1px solid;background:transparent;margin-right:6px;}
@@ -414,7 +422,7 @@ body{font-family:'Segoe UI',sans-serif;background:#0e0818;color:#f0e6ff;min-heig
 .me-restore:hover{background:rgba(239,68,68,.1);}
 </style>
 </head>
-<body>
+<body class="is-guest">
 
 <div class="top-bar">
   <div class="tab-wrap">
@@ -425,11 +433,12 @@ body{font-family:'Segoe UI',sans-serif;background:#0e0818;color:#f0e6ff;min-heig
     <button class="tab-btn aoba" onclick="switchGroup('aoba')">🩵 青葉坂46</button>
   </div>
   <div class="top-btns">
-    <button class="top-btn" onclick="openAddModal()">＋ 新增</button>
-    <button class="top-btn" onclick="openManageModal()">🗑 刪除</button>
+    <button class="top-btn edit-only" onclick="openAddModal()">＋ 新增</button>
+    <button class="top-btn edit-only" onclick="openManageModal()">🗑 管理</button>
     <button class="top-btn" onclick="openGlobalSearch()">🔍 跨組</button>
     <button class="top-btn" onclick="toggleRankPanel()">🏆 排行榜</button>
     <button class="top-btn" onclick="openRoster()">👤 成員</button>
+    <button class="top-btn" id="auth-btn" onclick="toggleAuth()">⏳</button>
   </div>
 </div>
 
@@ -555,7 +564,7 @@ body{font-family:'Segoe UI',sans-serif;background:#0e0818;color:#f0e6ff;min-heig
     </div>
     <div style="display:flex;gap:6px;flex-shrink:0;">
       <button id="mp-share-btn" onclick="copyShare(mpState.g+'/m/'+encodeURIComponent(mpState.name),this)" style="background:transparent;border:1px solid #4a2d7a;color:#c084fc;border-radius:6px;padding:4px 10px;cursor:pointer;font-size:.8rem;" title="複製這位成員的連結">🔗</button>
-      <button id="mp-edit-btn" onclick="openMemberEdit(mpState.g,mpState.name)" style="background:transparent;border:1px solid #4a2d7a;color:#c084fc;border-radius:6px;padding:4px 10px;cursor:pointer;font-size:.8rem;" title="編輯成員資料">✏️</button>
+      <button id="mp-edit-btn" class="edit-only" onclick="openMemberEdit(mpState.g,mpState.name)" style="background:transparent;border:1px solid #4a2d7a;color:#c084fc;border-radius:6px;padding:4px 10px;cursor:pointer;font-size:.8rem;" title="編輯成員資料">✏️</button>
       <button onclick="closeMemberPanel()" style="background:transparent;border:1px solid #4a2d7a;color:#c084fc;border-radius:6px;padding:4px 10px;cursor:pointer;font-size:.8rem;">✕</button>
     </div>
   </div>
@@ -593,7 +602,7 @@ body{font-family:'Segoe UI',sans-serif;background:#0e0818;color:#f0e6ff;min-heig
     <div id="rs-msg" class="mmsg"></div>
     <div class="mbtns" style="justify-content:space-between;">
       <button class="btn-cancel" onclick="closeModal('rosterModal')">關閉</button>
-      <button class="btn-save" onclick="openAddMember()">＋ 新增成員</button>
+      <button class="btn-save edit-only" onclick="openAddMember()">＋ 新增成員</button>
     </div>
   </div>
 </div>
@@ -730,6 +739,7 @@ body{font-family:'Segoe UI',sans-serif;background:#0e0818;color:#f0e6ff;min-heig
     <div id="m-backup" style="display:none;">
       <div class="mg">
         <h3>⬇ 匯出備份</h3>
+        <div class="auth-uid" id="auth-uid"></div>
         <div class="bk-desc" id="bk-summary">統計中…</div>
         <div class="mbtns"><button class="btn-save" onclick="exportBackup()">⬇ 下載備份檔</button></div>
       </div>
@@ -968,7 +978,41 @@ const firebaseConfig = {
   appId: "1:913584523861:web:5a02fe673e5bf3e5b662dc"
 };
 
-let db=null,liveData={nogi:[],hinata:[],sakura:[],keyaki:[],aoba:[]},trashData={nogi:[],hinata:[],sakura:[],keyaki:[],aoba:[]},dbReady={nogi:false,hinata:false,sakura:false,keyaki:false,aoba:false};
+let db=null,firebaseAuth=null,liveData={nogi:[],hinata:[],sakura:[],keyaki:[],aoba:[]},trashData={nogi:[],hinata:[],sakura:[],keyaki:[],aoba:[]},dbReady={nogi:false,hinata:false,sakura:false,keyaki:false,aoba:false};
+
+// ── 登入（Google）──
+// 讀取開放給所有人，寫入只允許擁有者。設定 LOCAL 持久化，關掉瀏覽器也維持登入。
+let authUser=null, authReady=false;
+function canEdit(){return !!authUser;}
+function applyAuthUI(){
+  document.body.classList.toggle('is-guest',!canEdit());
+  const b=document.getElementById('auth-btn');
+  if(!b)return;
+  if(!authReady){b.textContent='⏳';b.disabled=true;return;}
+  b.disabled=false;
+  b.classList.toggle('signed-in',canEdit());
+  if(canEdit()){
+    b.textContent='✓ '+(authUser.displayName||authUser.email||'已登入');
+    b.title='點擊登出';
+  } else {
+    b.textContent='🔑 登入';
+    b.title='以 Google 登入後才能編輯';
+  }
+  const box=document.getElementById('auth-uid');
+  if(box)box.innerHTML=canEdit()
+    ? ('目前登入：<b>'+(authUser.email||authUser.displayName||'')+'</b><br>你的 UID：<code>'+authUser.uid+'</code>')
+    : '尚未登入，僅能瀏覽。';
+}
+function toggleAuth(){
+  if(!firebaseAuth){alert('Firebase Auth 未載入。');return;}
+  if(canEdit()){ firebaseAuth.signOut(); return; }
+  const provider=new firebase.auth.GoogleAuthProvider();
+  firebaseAuth.signInWithPopup(provider).catch(err=>{
+    // 手機或 PWA 內彈窗常被擋，改用轉址
+    if(err&&/popup/i.test(err.code||'')) firebaseAuth.signInWithRedirect(provider);
+    else alert('登入失敗：'+(err&&err.message||err));
+  });
+}
 
 function toDoc(entry){
   const doc={...entry};
@@ -987,6 +1031,19 @@ function fromDoc(id,data){
 try{
   firebase.initializeApp(firebaseConfig);
   db=firebase.firestore();
+  if(firebase.auth){
+    firebaseAuth=firebase.auth();
+    firebaseAuth.setPersistence(firebase.auth.Auth.Persistence.LOCAL).catch(()=>{});
+    firebaseAuth.onAuthStateChanged(u=>{
+      authUser=u||null; authReady=true; applyAuthUI();
+      // 登入後才執行需要寫入的維護工作
+      if(canEdit())['nogi','hinata','sakura','keyaki','aoba'].forEach(g=>{sweepTrash(g);backfillRows(g);});
+      if(canEdit())migrateMemberOverrides();
+      const roster=document.getElementById('rosterModal');
+      if(roster&&roster.classList.contains('open'))refreshRoster();
+      renderAll();
+    });
+  } else { authReady=true; applyAuthUI(); }
   db.enablePersistence({synchronizeTabs:true}).catch(()=>{});
   ['nogi','hinata','sakura','keyaki','aoba'].forEach(g=>{
     db.collection(g).onSnapshot(snap=>{
@@ -1013,6 +1070,7 @@ try{
 }catch(e){
   console.warn('Firebase init failed:',e);
   ['nogi','hinata','sakura','keyaki','aoba'].forEach(g=>{dbReady[g]=true;});
+  authReady=true;
 }
 
 function getBase(g){
@@ -1042,14 +1100,17 @@ function isBaseEntry(g,num){return getBase(g).some(b=>b.num===num);}
 
 // ── 軟刪除／復原 ──
 function softDelete(g,num){
+  if(!canEdit())return Promise.reject(new Error('請先登入'));
   if(!db)return Promise.reject(new Error('Firebase 未設定'));
   return db.collection(g).doc(String(num)).update({deleted:true,deletedAt:Date.now()});
 }
 function restoreEntry(g,num){
+  if(!canEdit())return Promise.reject(new Error('請先登入'));
   if(!db)return Promise.reject(new Error('Firebase 未設定'));
   return db.collection(g).doc(String(num)).update({deleted:false,deletedAt:null});
 }
 function purgeEntry(g,num){
+  if(!canEdit())return Promise.reject(new Error('請先登入'));
   if(!db)return Promise.reject(new Error('Firebase 未設定'));
   return db.collection(g).doc(String(num)).delete();
 }
@@ -1072,7 +1133,7 @@ function fixLabels(a){
 }
 function sameArr(a,b){return JSON.stringify(a||[])===JSON.stringify(b||[]);}
 function backfillRows(g){
-  if(!db)return;
+  if(!db||!canEdit())return;
   const base={};
   getBase(g).forEach(e=>{if(Array.isArray(e.rows)&&e.rows.some(r=>r&&r.length))base[e.num]=e.rows;});
   (liveData[g]||[]).forEach(d=>{
@@ -1099,7 +1160,7 @@ function backfillRows(g){
 }
 
 function sweepTrash(g){
-  if(!db)return;
+  if(!db||!canEdit())return;
   const now=Date.now();
   (trashData[g]||[]).forEach(d=>{
     if(d.deletedAt&&now-d.deletedAt>=TRASH_TTL_MS){
@@ -1407,11 +1468,13 @@ function loadMemberOverrides(){
 }
 function memberDocId(g,name){return g+'__'+name;}
 function saveMemberDoc(g,name,data){
+  if(db&&!canEdit())return Promise.reject(new Error('請先登入'));
   if(db)return db.collection(MEM_COL).doc(memberDocId(g,name)).set({g,name,...data});
   const ov=localOverrides(); (ov[g]=ov[g]||{})[name]=data; cacheOverrides(ov);
   memberOv=ov; onMembersChanged(); return Promise.resolve();
 }
 function deleteMemberDoc(g,name){
+  if(db&&!canEdit())return Promise.reject(new Error('請先登入'));
   if(db)return db.collection(MEM_COL).doc(memberDocId(g,name)).delete();
   const ov=localOverrides(); if(ov[g])delete ov[g][name]; cacheOverrides(ov);
   memberOv=ov; onMembersChanged(); return Promise.resolve();
@@ -1426,7 +1489,7 @@ function onMembersChanged(){
 }
 // 舊版資料搬遷：把本機既有的成員覆蓋上傳一次
 function migrateMemberOverrides(){
-  if(!db||localStorage.getItem('memberOverridesMigrated'))return;
+  if(!db||!canEdit()||localStorage.getItem('memberOverridesMigrated'))return;
   const local=localOverrides();
   const ops=[];
   Object.entries(local).forEach(([g,members])=>{
@@ -1577,14 +1640,14 @@ function refreshRoster(){
       });
       const btns=document.createElement('div'); btns.className='rs-btns';
       btns.addEventListener('click',e=>e.stopPropagation());   // 編輯／刪除不觸發開面板
-      const eb=document.createElement('button'); eb.className='rs-btn'; eb.textContent='✏️ 編輯';
+      const eb=document.createElement('button'); eb.className='rs-btn edit-only'; eb.textContent='✏️ 編輯';
       eb.addEventListener('click',()=>openMemberEdit(g,name));
       btns.appendChild(eb);
       const custom=isCustomMember(g,name);
       const overridden=!!((loadMemberOverrides()[g]||{})[name]);
       if(custom||overridden){
         const db_=document.createElement('button');
-        db_.className='rs-btn danger';
+        db_.className='rs-btn danger edit-only';
         db_.textContent=custom?'🗑 刪除':'↩ 還原';
         db_.addEventListener('click',()=>{
           if(db_.dataset.confirm!=='1'){
@@ -1962,7 +2025,7 @@ function buildNogiCard(d,s){
   sb.title='複製這張單曲的連結';
   sb.addEventListener('click',()=>copyShare('nogi'+'/'+d.num,sb));
   footer.appendChild(sb);
-  const eb=document.createElement('button'); eb.className='card-edit-btn'; eb.textContent='✏️ 編輯';
+  const eb=document.createElement('button'); eb.className='card-edit-btn edit-only'; eb.textContent='✏️ 編輯';
   eb.addEventListener('click',()=>openEditModal('nogi',d.num)); footer.appendChild(eb);
   card.append(hdr,zh,meta);
 
@@ -2022,7 +2085,7 @@ function buildRowsCard(d,g){
   sb.title='複製這張單曲的連結';
   sb.addEventListener('click',()=>copyShare(g+'/'+d.num,sb));
   footer.appendChild(sb);
-  const eb=document.createElement('button'); eb.className='card-edit-btn'; eb.textContent='✏️ 編輯';
+  const eb=document.createElement('button'); eb.className='card-edit-btn edit-only'; eb.textContent='✏️ 編輯';
   eb.addEventListener('click',()=>openEditModal(g,d.num)); footer.appendChild(eb);
   card.appendChild(footer);
   return card;
@@ -2077,6 +2140,7 @@ function renderG(g){
   if(rankPanelOpen)buildRankTable();
 }
 const PAGE_SIZE=10;
+function renderAll(){['nogi','hinata','sakura','keyaki','aoba'].forEach(g=>{if(dbReady[g])renderG(g);});}
 function gotoPage(g,n){
   S[g].page=n;
   renderG(g);
@@ -2294,6 +2358,7 @@ function copyShare(suffix,btn){
     }catch(e){ done(false); prompt('複製這個連結：',url); }
   }
 }
+applyAuthUI();
 (()=>{applyHash();})();
 window.addEventListener('hashchange',applyHash);
 
