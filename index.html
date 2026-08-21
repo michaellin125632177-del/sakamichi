@@ -1945,19 +1945,39 @@ function underMembers(g,num){const m=UNDER[g];return m?(m[num]||null):null;}
 const TJ_BANDS=['★ Center','前排','中排','後排'];
 // 點的顏色：Center 金黃、前排紅、其餘入選綠；未入選在 CSS 裡是灰
 const TJ_CLASS=['tj-c0','tj-c1','tj-c2','tj-c2'];
-// 各期的「最速可選拔單曲」。加入當下那幾張的選拔多半已經定案，
-// 純用加入日推算會多算一兩張；沒列出的期別就退回日期推算。
-const GEN_START={nogi:{3:18}};
-// 這個成員從第幾張單曲起算「在團」
-function activeFrom(g,name,singles){
+// 各期的「最速可選拔單曲」。加入日推不出來 —— 加入當下那幾張的選拔早就定案了。
+// 改成從資料反推：該期第一次有人出現在表題曲或 Under 曲的那一張，
+// 就是這一期開始參與單曲的時間點。乃木坂算出來是 1／7／18／24／29／40，
+// 三期的 18th 與 n46db 標的一致。GEN_START 留給算不準的例外手動覆寫。
+const GEN_START={};
+function genStart(g,gen){
+  if(gen===undefined||gen===null)return null;
+  const ov=(GEN_START[g]||{})[gen];
+  if(ov)return ov;
+  const db=memberDB[g]||{};
+  const crew=new Set(Object.keys(db).filter(n=>db[n].gen===gen));
+  if(!crew.size)return null;
+  const has=list=>(list||[]).some(n=>crew.has(n));
+  let best=null;
+  getBase(g).forEach(d=>{
+    if(has((d.rows||[]).flat())||has(d.center)||has(underMembers(g,d.num)))
+      best=(best===null)?d.num:Math.min(best,d.num);
+  });
+  return best;
+}
+// 圖的起點：加入之後第一張單曲。中間還沒跟團活動的那幾張會標成「未參與」。
+function joinedFrom(g,name,singles){
   const info=getMemberInfo(g,name)||{};
-  const gs=(GEN_START[g]||{})[info.gen];
-  if(gs)return gs;
   if(!info.joined)return null;
   const jd=new Date(info.joined);
   if(isNaN(jd))return null;
   const hit=singles.find(d=>{const sd=singleDate(d.date||d.dateStr);return sd&&sd>=jd;});
   return hit?hit.num:null;
+}
+// 統計的起點：該期的最速可選拔單曲；算不出來就退回加入日推算
+function activeFrom(g,name,singles){
+  const info=getMemberInfo(g,name)||{};
+  return genStart(g,info.gen)||joinedFrom(g,name,singles);
 }
 function memberTrajectory(g,name){
   const singles=(getData(g)||[]).slice().sort((a,b)=>a.num-b.num);
@@ -2033,7 +2053,7 @@ function buildTrajectory(g,name){
   const W=300,H=160,L=32,R=294,TOP=15,GAP=26,MISS=119,IDLE=141;
   // 有 Under 名單才敢從「入團」畫起；沒有的話往前都會被誤標成 under
   const hasUnder=!!UNDER[g];
-  const from=hasUnder?activeFrom(g,name,data):null;
+  const from=hasUnder?joinedFrom(g,name,data):null;
   const first=Math.min(picked[0].num,from||picked[0].num), last=data[data.length-1].num;
   const span=Math.max(1,last-first);
   const X=n=>L+(n-first)/span*(R-L);
