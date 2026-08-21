@@ -368,9 +368,15 @@ body.is-guest .edit-only{display:none!important;}
 .tj-line{fill:none;stroke-width:1.6;stroke-linejoin:round;stroke-linecap:round;}
 .tj-dot{cursor:pointer;}
 .tj-dot:hover{stroke:#fff;stroke-width:1.2;}
-.tj-miss{fill:#3b2a55;}
+.tj-miss{fill:#94a3b8;}
+.tj-idle{fill:none;stroke:#5b6472;stroke-width:1.2;}
 .tj-break{stroke:rgba(255,255,255,.14);stroke-width:1;stroke-dasharray:none;}
-.tj-star{fill:#ec4899;stroke:#fff;stroke-width:.8;}
+.tj-c0{fill:#fbbf24;}
+.tj-c1{fill:#ef4444;}
+.tj-c2{fill:#22c55e;}
+.tj-star{stroke:#fff;stroke-width:.8;}
+.tj-legend{display:flex;flex-wrap:wrap;gap:4px 10px;margin-top:6px;font-size:.62rem;color:#7c5cb0;}
+.tj-legend i{display:inline-block;width:7px;height:7px;border-radius:50%;margin-right:4px;vertical-align:middle;}
 .mp-chart-cap{font-size:.68rem;color:#7c5cb0;margin-top:6px;line-height:1.5;min-height:2.1em;}
 .mp-chart-cap b{color:#e9d5ff;}
 
@@ -581,6 +587,7 @@ body.is-guest .edit-only{display:none!important;}
     <div id="mp-chart-wrap" style="padding:10px 12px 8px;border-bottom:1px solid #2a1250;display:none;">
       <div class="mp-chart-hd">生涯軌跡</div>
       <div id="mp-chart"></div>
+      <div id="mp-chart-legend" class="tj-legend"></div>
       <div id="mp-chart-cap" class="mp-chart-cap">點圖上的點可看該單曲</div>
     </div>
     <div style="padding:8px 14px;border-bottom:1px solid #2a1250;">
@@ -1035,7 +1042,8 @@ const NAME_FIXES={
   '金川沙耶':'金川紗耶',
   '高本彩花':'髙本彩花',      // 官方用梯子高，與 髙橋未来虹 一致
   '石塚瑠季':'石塚瑶季',
-  '市來玲奈':'市来玲奈'
+  '市來玲奈':'市来玲奈',
+  '海邊朱莉':'海邉朱莉'
 };
 function fixName(n){return NAME_FIXES[n]||n;}
 function fixList(a){return (a||[]).map(fixName);}
@@ -1336,7 +1344,7 @@ const memberDB={
     '愛宕心響':{bday:'2005-09-17',joined:'2025-02-05',gen:6},
     '大越ひなの':{bday:'2004-12-01',joined:'2025-02-05',gen:6},
     '小津玲奈':{bday:'2007-04-17',joined:'2025-02-05',gen:6},
-    '海邊朱莉':{bday:'2007-02-14',joined:'2025-02-05',gen:6},
+    '海邉朱莉':{bday:'2007-02-14',joined:'2025-02-05',gen:6},
     '川端晃菜':{bday:'2011-01-14',joined:'2025-02-05',gen:6},
     '鈴木佑捺':{bday:'2006-05-18',joined:'2025-02-05',gen:6},
     '瀬戸口心月':{bday:'2005-07-16',joined:'2025-02-05',gen:6},
@@ -1847,8 +1855,10 @@ function openMemberPanel(g,name){
   fbtn.style.borderColor=isFiltered?'#dc2626':color;
   fbtn.style.color=isFiltered?'#fca5a5':color;
 
-  document.getElementById('mp-rec-hdr').textContent=
-    '選拔紀錄（'+(recs.length?recs.length+'次，其中Center '+centerCount+'次':'尚無記錄')+'）';
+  const cs=careerStats(g,name);
+  let hdr='選拔紀錄（'+(recs.length?recs.length+'次，其中Center '+centerCount+'次':'尚無記錄')+'）';
+  if(cs.active)hdr+='　·　在團 '+cs.active+' 張　·　選拔率 '+cs.rate.toFixed(3).replace(/^0/,'');
+  document.getElementById('mp-rec-hdr').textContent=hdr;
 
   const list=document.getElementById('mp-rec-list');
   list.innerHTML='';
@@ -1880,40 +1890,130 @@ function absenceReason(g,name,num){
   return raw?(ABSENCE_LABEL[raw]||raw):null;
 }
 
+// ── 各單曲的 Under 曲成員 ──
+// 有了這份名單，「不在表題曲裡」才分得出是下 Under 還是根本沒參與團體活動。
+// 第 25 張沒有 Under 曲，留空陣列 —— 沒入選的人那張就是真的沒參與。
+// 目前只有乃木坂有；沒有資料的團體維持舊行為（未入選一律畫在 under 線）。
+const UNDER={nogi:{
+  1:['斎藤ちはる','大和里菜','永島聖羅','樋口日奈','川後陽菜','若月佑美','柏幸奈','衛藤美彩','深川麻衣','宮澤成良','安藤美雲','岩瀬佑美子','伊藤寧々','畠中清羅','伊藤万理華','和田まあや','中元日芽香'],
+  2:['柏幸奈','安藤美雲','大和里菜','能條愛未','和田まあや','衛藤美彩','伊藤寧々','齋藤飛鳥','中元日芽香','樋口日奈','川後陽菜','川村真洋','斎藤ちはる','永島聖羅','深川麻衣','伊藤万理華','若月佑美'],
+  3:['宮澤成良','安藤美雲','畠中清羅','岩瀬佑美子','和田まあや','中元日芽香','斎藤ちはる','川村真洋','柏幸奈','大和里菜','永島聖羅','衛藤美彩','能條愛未','川後陽菜','樋口日奈','齋藤飛鳥','伊藤寧々'],
+  4:['宮澤成良','大和里菜','安藤美雲','和田まあや','斎藤ちはる','川村真洋','中元日芽香','畠中清羅','永島聖羅','伊藤万理華','川後陽菜','樋口日奈','伊藤寧々','斉藤優里','中田花奈','衛藤美彩'],
+  5:['大和里菜','和田まあや','中元日芽香','斎藤ちはる','柏幸奈','安藤美雲','畠中清羅','樋口日奈','川後陽菜','宮澤成良','川村真洋','衛藤美彩','能條愛未','市来玲奈','伊藤万理華','斉藤優里','齋藤飛鳥'],
+  6:['大和里菜','川後陽菜','和田まあや','柏幸奈','畠中清羅','宮澤成良','伊藤寧々','永島聖羅','斎藤ちはる','市来玲奈','能條愛未','衛藤美彩','川村真洋','樋口日奈','中元日芽香','齋藤飛鳥'],
+  7:['市来玲奈','斎藤ちはる','畠中清羅','大和里菜','伊藤寧々','和田まあや','能條愛未','樋口日奈','中田花奈','永島聖羅','川村真洋','井上小百合','星野みなみ','斉藤優里'],
+  8:['斎藤ちはる','伊藤寧々','市来玲奈','新内眞衣','畠中清羅','大和里菜','能條愛未','永島聖羅','中田花奈','衛藤美彩','川後陽菜','中元日芽香','井上小百合','齋藤飛鳥','伊藤万理華','星野みなみ','斉藤優里'],
+  9:['斎藤ちはる','北野日奈子','畠中清羅','伊藤寧々','市来玲奈','新内眞衣','永島聖羅','中田花奈','能條愛未','中元日芽香','川村真洋','川後陽菜','齋藤飛鳥','伊藤万理華','樋口日奈','和田まあや'],
+  10:['川村真洋','和田まあや','樋口日奈','伊藤かりん','川後陽菜','畠中清羅','北野日奈子','大和里菜','新内眞衣','永島聖羅','中元日芽香','斉藤優里','中田花奈','能條愛未','齋藤飛鳥','井上小百合','伊藤万理華'],
+  11:['川村真洋','北野日奈子','川後陽菜','樋口日奈','伊藤かりん','和田まあや','斎藤ちはる','能條愛未','永島聖羅','中田花奈','新内眞衣','斉藤優里','中元日芽香','井上小百合'],
+  12:['和田まあや','佐々木琴子','寺田蘭世','伊藤かりん','渡辺みり愛','鈴木絢音','伊藤純奈','樋口日奈','相楽伊織','川後陽菜','永島聖羅','能條愛未','斎藤ちはる','川村真洋','北野日奈子','堀未央奈','中元日芽香','中田花奈'],
+  13:['川後陽菜','渡辺みり愛','山崎怜奈','佐々木琴子','相楽伊織','伊藤純奈','鈴木絢音','伊藤かりん','和田まあや','中田花奈','新内眞衣','川村真洋','永島聖羅','能條愛未','樋口日奈','斎藤ちはる','斉藤優里','北野日奈子','堀未央奈','中元日芽香','寺田蘭世'],
+  14:['斎藤ちはる','渡辺みり愛','鈴木絢音','山崎怜奈','佐々木琴子','相楽伊織','川後陽菜','和田まあや','伊藤純奈','伊藤かりん','川村真洋','中田花奈','新内眞衣','能條愛未','斉藤優里','寺田蘭世','中元日芽香','北野日奈子','樋口日奈'],
+  15:['川村真洋','山崎怜奈','伊藤純奈','川後陽菜','鈴木絢音','和田まあや','相楽伊織','佐々木琴子','伊藤かりん','斎藤ちはる','斉藤優里','新内眞衣','中田花奈','能條愛未','寺田蘭世','伊藤万理華','樋口日奈','井上小百合','渡辺みり愛'],
+  16:['伊藤純奈','和田まあや','伊藤かりん','川後陽菜','佐々木琴子','相楽伊織','斉藤優里','山崎怜奈','渡辺みり愛','鈴木絢音','斎藤ちはる','川村真洋','樋口日奈','寺田蘭世','中田花奈','能條愛未'],
+  17:['川後陽菜','佐々木琴子','和田まあや','伊藤純奈','川村真洋','斎藤ちはる','伊藤かりん','能條愛未','相楽伊織','山崎怜奈','渡辺みり愛','鈴木絢音'],
+  18:['能條愛未','相楽伊織','川後陽菜','川村真洋','佐々木琴子','和田まあや','中田花奈','山崎怜奈','鈴木絢音','伊藤かりん','伊藤純奈','斎藤ちはる','樋口日奈','渡辺みり愛','中元日芽香','北野日奈子','寺田蘭世','斉藤優里'],
+  19:['相楽伊織','佐々木琴子','伊藤かりん','川後陽菜','川村真洋','和田まあや','伊藤純奈','能條愛未','鈴木絢音','山崎怜奈','斎藤ちはる','渡辺みり愛','樋口日奈','寺田蘭世'],
+  20:['能條愛未','川後陽菜','吉田綾乃クリスティー','佐々木琴子','中村麗乃','和田まあや','相楽伊織','向井葉月','伊藤かりん','岩本蓮加','伊藤純奈','阪口珠美','斎藤ちはる','佐藤楓','梅澤美波','渡辺みり愛','中田花奈','鈴木絢音','斉藤優里','山崎怜奈','伊藤理々杏'],
+  21:['和田まあや','川後陽菜','能條愛未','中村麗乃','伊藤かりん','佐々木琴子','向井葉月','吉田綾乃クリスティー','阪口珠美','北野日奈子','寺田蘭世','渡辺みり愛','伊藤純奈','山崎怜奈','樋口日奈','中田花奈','伊藤理々杏','佐藤楓'],
+  22:['伊藤純奈','和田まあや','中村麗乃','川後陽菜','伊藤かりん','佐々木琴子','吉田綾乃クリスティー','阪口珠美','山崎怜奈','久保史緒里','中田花奈','渡辺みり愛','向井葉月','鈴木絢音','樋口日奈','北野日奈子','寺田蘭世','岩本蓮加'],
+  23:['吉田綾乃クリスティー','向井葉月','和田まあや','佐々木琴子','伊藤純奈','山崎怜奈','中村麗乃','寺田蘭世','樋口日奈','中田花奈'],
+  24:['中村麗乃','和田まあや','向井葉月','吉田綾乃クリスティー','佐々木琴子','伊藤純奈','中田花奈','阪口珠美','伊藤理々杏','山崎怜奈','佐藤楓','鈴木絢音','樋口日奈','岩本蓮加','渡辺みり愛','寺田蘭世'],
+  25:[],
+  26:['伊藤純奈','佐藤楓','向井葉月','和田まあや','吉田綾乃クリスティー','中村麗乃','山崎怜奈','渡辺みり愛','樋口日奈','寺田蘭世','伊藤理々杏','鈴木絢音','阪口珠美','北野日奈子'],
+  27:['佐藤楓','和田まあや','中村麗乃','向井葉月','吉田綾乃クリスティー','伊藤理々杏','阪口珠美','北野日奈子','鈴木絢音','寺田蘭世','渡辺みり愛','山崎怜奈','伊藤純奈'],
+  28:['伊藤理々杏','黒見明香','矢久保美緒','和田まあや','北川悠理','吉田綾乃クリスティー','向井葉月','松尾美佑','林瑠奈','阪口珠美','金川紗耶','佐藤璃果','佐藤楓','弓木奈於','柴田柚菜','寺田蘭世','中村麗乃','山崎怜奈'],
+  29:['吉田綾乃クリスティー','伊藤理々杏','向井葉月','和田まあや','黒見明香','矢久保美緒','林瑠奈','松尾美佑','山崎怜奈','中村麗乃','北川悠理','阪口珠美','弓木奈於','佐藤楓','金川紗耶','佐藤璃果'],
+  30:['林瑠奈','北川悠理','吉田綾乃クリスティー','黒見明香','矢久保美緒','佐藤璃果','中村麗乃','向井葉月','松尾美佑','阪口珠美','和田まあや','伊藤理々杏'],
+  31:['北川悠理','黒見明香','吉田綾乃クリスティー','矢久保美緒','佐藤璃果','向井葉月','伊藤理々杏','松尾美佑','中村麗乃','佐藤楓'],
+  32:['黒見明香','岡本姫奈','矢久保美緒','吉田綾乃クリスティー','清宮レイ','奥田いろは','北川悠理','中村麗乃','冨里奈央','中西アルノ','池田瑛紗','小川彩','阪口珠美','佐藤楓','伊藤理々杏','林瑠奈','向井葉月'],
+  33:['冨里奈央','清宮レイ','矢久保美緒','佐藤楓','吉田綾乃クリスティー','阪口珠美','黒見明香','奥田いろは','向井葉月','小川彩','松尾美佑','中西アルノ','佐藤璃果'],
+  34:['岡本姫奈','矢久保美緒','吉田綾乃クリスティー','林瑠奈','佐藤璃果','奥田いろは','清宮レイ','阪口珠美','中村麗乃','佐藤楓','伊藤理々杏','小川彩','中西アルノ','松尾美佑'],
+  35:['岡本姫奈','林瑠奈','佐藤璃果','松尾美佑','清宮レイ','矢久保美緒','奥田いろは','中西アルノ','柴田柚菜','金川紗耶','黒見明香','小川彩','菅原咲月','筒井あやめ','冨里奈央'],
+  36:['吉田綾乃クリスティー','岡本姫奈','佐藤璃果','佐藤楓','矢久保美緒','中村麗乃','松尾美佑','向井葉月','伊藤理々杏','柴田柚菜','林瑠奈','奥田いろは','黒見明香'],
+  37:['吉田綾乃クリスティー','黒見明香','松尾美佑','矢久保美緒','伊藤理々杏','中村麗乃','佐藤璃果','岡本姫奈','佐藤楓','菅原咲月','冨里奈央','柴田柚菜'],
+  38:['岩本蓮加','佐藤璃果','黒見明香','矢久保美緒','吉田綾乃クリスティー','松尾美佑','岡本姫奈','柴田柚菜','佐藤楓','伊藤理々杏'],
+  39:['伊藤理々杏','矢久保美緒','松尾美佑','黒見明香','吉田綾乃クリスティー','佐藤璃果','柴田柚菜','奥田いろは','岩本蓮加','林瑠奈','金川紗耶','田村真佑'],
+  40:['伊藤理々杏','佐藤璃果','柴田柚菜','奥田いろは','黒見明香','岩本蓮加','吉田綾乃クリスティー','田村真佑','林瑠奈','冨里奈央','金川紗耶','矢久保美緒','五百城茉央','松尾美佑'],
+  41:['大越ひなの','海邉朱莉','増田三莉音','鈴木佑捺','川端晃菜','長嶋凛桜','愛宕心響','伊藤理々杏','奥田いろは','矢田萌華','森平麗心','瀬戸口心月','黒見明香','吉田綾乃クリスティー','金川紗耶','佐藤璃果','岡本姫奈','岩本蓮加','柴田柚菜'],
+  42:['小津玲奈','海邉朱莉','鈴木佑捺','伊藤理々杏','愛宕心響','川端晃菜','長嶋凛桜','柴田柚菜','冨里奈央','奥田いろは','黒見明香','岡本姫奈','小川彩','金川紗耶']
+}};
+function underMembers(g,num){const m=UNDER[g];return m?(m[num]||null):null;}
+
 // ── 生涯軌跡圖 ──
 // band 0=Center 1=前排 2=中排 3=後排；未選拔畫在底線
 const TJ_BANDS=['★ Center','前排','中排','後排'];
+// 點的顏色：Center 金黃、前排紅、其餘入選綠；未入選在 CSS 裡是灰
+const TJ_CLASS=['tj-c0','tj-c1','tj-c2','tj-c2'];
+// 各期的「最速可選拔單曲」。加入當下那幾張的選拔多半已經定案，
+// 純用加入日推算會多算一兩張；沒列出的期別就退回日期推算。
+const GEN_START={nogi:{3:18}};
+// 這個成員從第幾張單曲起算「在團」
+function activeFrom(g,name,singles){
+  const info=getMemberInfo(g,name)||{};
+  const gs=(GEN_START[g]||{})[info.gen];
+  if(gs)return gs;
+  if(!info.joined)return null;
+  const jd=new Date(info.joined);
+  if(isNaN(jd))return null;
+  const hit=singles.find(d=>{const sd=singleDate(d.date||d.dateStr);return sd&&sd>=jd;});
+  return hit?hit.num:null;
+}
 function memberTrajectory(g,name){
   const singles=(getData(g)||[]).slice().sort((a,b)=>a.num-b.num);
   return singles.map(d=>{
+    const at={num:d.num,title:d.title,dateStr:d.date,selected:false};
     const away=absenceReason(g,name,d.num);
-    if(away)return {num:d.num,title:d.title,dateStr:d.date,selected:false,absent:true,where:away};
+    if(away)return {...at,absent:true,where:away};
     const isC=(d.center||[]).includes(name);
     let band=null,idx=-1,len=0,where='';
     const rows=Array.isArray(d.rows)?d.rows:null;
     if(rows){
       for(let ri=0;ri<3;ri++){
         const r=rows[ri]||[];
-        const at=r.indexOf(name);
-        if(at>=0){band=[3,2,1][ri];idx=at;len=r.length;where=['後排','中排','前排'][ri];break;}
+        const pos=r.indexOf(name);
+        if(pos>=0){band=[3,2,1][ri];idx=pos;len=r.length;where=['後排','中排','前排'][ri];break;}
       }
     }
     if(band===null&&!rows){   // 沒有站位資料時退回名單分區
       if((d.fukujin||[]).includes(name)){band=2;where='福神';}
       else if((d.back||[]).includes(name)){band=3;where='Under';}
     }
-    if(band===null)return {num:d.num,title:d.title,dateStr:d.date,selected:false,band:4,where:'under'};
+    if(band===null){
+      // 不在表題曲裡：有 Under 名單才分得出是下 Under 還是根本沒參與
+      const u=underMembers(g,d.num);
+      if(!u)return {...at,under:true,where:'under'};
+      return u.includes(name)?{...at,under:true,where:'under'}
+                             :{...at,idle:true,where:'未參與'};
+    }
     if(isC){band=0;where='Center';}
     // 在該排的中央程度：正中央=1，最邊邊=0
     let central=1;
     if(len>1){const mid=(len-1)/2;central=1-Math.abs(idx-mid)/mid;}
-    return {num:d.num,title:d.title,dateStr:d.date,selected:true,band,where,idx,len,isC,central};
+    return {...at,selected:true,band,where,idx,len,isC,central};
   });
 }
 // 單曲的發行日（"2019年9月1日"）→ Date
 function singleDate(str){
   const m=/(\d+)年(\d+)月(\d+)日/.exec(str||'');
   return m?new Date(+m[1],+m[2]-1,+m[3]):null;
+}
+// 生涯統計：以「在團期間」為分母，而不是從第一次入選才開始算
+function careerStats(g,name){
+  const info=getMemberInfo(g,name)||{};
+  let data=memberTrajectory(g,name);
+  if(info.grad){
+    const gd=new Date(info.grad);
+    if(!isNaN(gd))data=data.filter(d=>{const sd=singleDate(d.dateStr);return !sd||sd<=gd;});
+  }
+  const picked=data.filter(d=>d.selected);
+  const sel=picked.length, ctr=picked.filter(d=>d.isC).length;
+  if(!sel)return {sel:0,ctr:0};
+  const from=UNDER[g]?activeFrom(g,name,data):null;
+  if(!from)return {sel,ctr};
+  const first=Math.min(from,picked[0].num);
+  const active=data.filter(d=>d.num>=first).length;
+  return {sel,ctr,from:first,active,rate:active?sel/active:0};
 }
 function buildTrajectory(g,name){
   const wrap=document.getElementById('mp-chart-wrap');
@@ -1930,8 +2030,11 @@ function buildTrajectory(g,name){
     if(!isNaN(gd))data=data.filter(d=>{const sd=singleDate(d.dateStr);return !sd||sd<=gd;});
   }
   const color=G_COLOR[g]||'#a855f7';
-  const W=300,H=142,L=32,R=294,TOP=15,GAP=26,MISS=119;
-  const first=picked[0].num, last=data[data.length-1].num;
+  const W=300,H=160,L=32,R=294,TOP=15,GAP=26,MISS=119,IDLE=141;
+  // 有 Under 名單才敢從「入團」畫起；沒有的話往前都會被誤標成 under
+  const hasUnder=!!UNDER[g];
+  const from=hasUnder?activeFrom(g,name,data):null;
+  const first=Math.min(picked[0].num,from||picked[0].num), last=data[data.length-1].num;
   const span=Math.max(1,last-first);
   const X=n=>L+(n-first)/span*(R-L);
   const Y=b=>TOP+b*GAP;
@@ -1948,17 +2051,24 @@ function buildTrajectory(g,name){
   svg.appendChild(el('line',{x1:L,y1:MISS,x2:R,y2:MISS,class:'tj-grid'}));
   const mt=el('text',{x:L-5,y:MISS,class:'tj-band','text-anchor':'end'}); mt.textContent='under';
   svg.appendChild(mt);
+  const anyIdle=data.some(d=>d.idle&&d.num>=first);
+  if(anyIdle){
+    svg.appendChild(el('line',{x1:L,y1:IDLE,x2:R,y2:IDLE,class:'tj-grid'}));
+    const it=el('text',{x:L-5,y:IDLE,class:'tj-band','text-anchor':'end'}); it.textContent='未參與';
+    svg.appendChild(it);
+  }
 
   // x 軸刻度：首、末，以及中間每 10 張
   const ticks=[first,last];
-  for(let n=Math.ceil(first/10)*10;n<last;n+=10)if(n>first)ticks.push(n);
+  // 十位刻度太靠近頭尾就不畫，免得標籤疊在一起
+  for(let n=Math.ceil(first/10)*10;n<last;n+=10)if(n>first+1&&n<last-1)ticks.push(n);
   [...new Set(ticks)].forEach(n=>{
     const t=el('text',{x:X(n),y:H-3,class:'tj-xlbl'}); t.textContent=n; svg.appendChild(t);
   });
 
   // 每張單曲都有位置：入選在對應排，未入選落在 under；休養則整段跳過
   const seq=data.filter(d=>d.num>=first);
-  const yOf=d=>d.selected?Y(d.band):MISS;
+  const yOf=d=>d.selected?Y(d.band):(d.idle?IDLE:MISS);
   // 休養處畫一條淡淡的參考線，讓中斷看得出來是「沒參與」而不是漏畫
   seq.filter(d=>d.absent).forEach(d=>{
     const bar=el('line',{x1:X(d.num),y1:TOP-6,x2:X(d.num),y2:MISS+5,class:'tj-break'});
@@ -1977,7 +2087,7 @@ function buildTrajectory(g,name){
       points:run.map(d=>X(d.num)+','+yOf(d)).join(' '),class:'tj-line',stroke:color}));
     run=[];
   };
-  seq.forEach(d=>{ if(d.absent)flush(); else run.push(d); });
+  seq.forEach(d=>{ if(d.absent||d.idle)flush(); else run.push(d); });
   flush();
 
   const show=d=>{
@@ -1986,15 +2096,16 @@ function buildTrajectory(g,name){
       :'點圖上的點可看該單曲';
   };
   seq.filter(d=>!d.selected&&!d.absent).forEach(d=>{
-    const c=el('circle',{cx:X(d.num),cy:MISS,r:2.2,class:'tj-dot tj-miss'});
-    const t=el('title'); t.textContent='第'+d.num+'張 '+d.title+'（under）'; c.appendChild(t);
+    const c=el('circle',{cx:X(d.num),cy:yOf(d),r:2.2,
+      class:'tj-dot '+(d.idle?'tj-idle':'tj-miss')});
+    const t=el('title'); t.textContent='第'+d.num+'張 '+d.title+'（'+d.where+'）'; c.appendChild(t);
     c.addEventListener('pointerenter',()=>show(d));
     c.addEventListener('click',()=>show(d));
     svg.appendChild(c);
   });
-  picked.forEach(d=>{
-    const c=el('circle',{cx:X(d.num),cy:Y(d.band),r:d.isC?4:3,class:'tj-dot'+(d.isC?' tj-star':''),
-      fill:d.isC?'#ec4899':color,'fill-opacity':d.isC?1:(0.35+0.65*(d.central||0))});
+  seq.filter(d=>d.selected).forEach(d=>{
+    const c=el('circle',{cx:X(d.num),cy:Y(d.band),r:d.isC?4:3,
+      class:'tj-dot '+TJ_CLASS[d.band]+(d.isC?' tj-star':'')});
     const title=el('title'); title.textContent='第'+d.num+'張 '+d.title+'（'+d.where+'）';
     c.appendChild(title);
     c.addEventListener('pointerenter',()=>show(d));
@@ -2002,7 +2113,27 @@ function buildTrajectory(g,name){
     svg.appendChild(c);
   });
   host.innerHTML=''; host.appendChild(svg); show(null);
+
+  // 圖例只列這張圖真的用到的狀態
+  const lg=document.getElementById('mp-chart-legend');
+  const used=[
+    ['tj-c0','Center',    seq.some(d=>d.selected&&d.band===0)],
+    ['tj-c1','前排',      seq.some(d=>d.selected&&d.band===1)],
+    ['tj-c2','入選',      seq.some(d=>d.selected&&d.band>=2)],
+    ['tj-miss','Under',   seq.some(d=>d.under)],
+    ['tj-idle','未參與',  anyIdle]
+  ].filter(x=>x[2]);
+  lg.innerHTML='';
+  used.forEach(([cls,label])=>{
+    const sp=document.createElement('span');
+    const dot=document.createElement('i');
+    dot.style.background=cls==='tj-idle'?'transparent':TJ_LEGEND[cls];
+    if(cls==='tj-idle')dot.style.border='1.2px solid #5b6472';
+    sp.appendChild(dot); sp.appendChild(document.createTextNode(label));
+    lg.appendChild(sp);
+  });
 }
+const TJ_LEGEND={'tj-c0':'#fbbf24','tj-c1':'#ef4444','tj-c2':'#22c55e','tj-miss':'#94a3b8','tj-idle':'transparent'};
 
 function closeMemberPanel(){
   memberPanelOpen=false;
