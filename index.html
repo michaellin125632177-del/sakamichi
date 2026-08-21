@@ -14,7 +14,8 @@
 <meta name="apple-mobile-web-app-title" content="坂道選拔">
 <style>
 *{box-sizing:border-box;margin:0;padding:0;}
-body{font-family:'Segoe UI',sans-serif;background:#0e0818;color:#f0e6ff;min-height:100vh;}
+body{font-family:'Segoe UI',sans-serif;background:#0e0818;color:#f0e6ff;min-height:100vh;
+  width:max-content;min-width:100%;}   /* 內容較寬時，橫幅與各列一起延伸，不會只到視窗邊緣 */
 
 /* ── Top Bar ── */
 .top-bar{background:#090513;border-bottom:2px solid #1e1e1e;position:sticky;top:0;z-index:800;}
@@ -116,7 +117,7 @@ body{font-family:'Segoe UI',sans-serif;background:#0e0818;color:#f0e6ff;min-heig
 
 /* ── Grid / Cards ── */
 .grid{padding:10px 12px;display:grid;grid-template-columns:max-content;gap:10px;justify-content:start;}
-@media(min-width:560px){.grid{grid-template-columns:repeat(3,max-content);padding:14px 20px;gap:12px;}}
+@media(min-width:560px){.grid{grid-template-columns:repeat(2,max-content);padding:14px 20px;gap:12px;}}
 .card{border-radius:12px;padding:12px;transition:transform .2s,box-shadow .2s;display:flex;flex-direction:column;min-width:300px;}
 .card:hover{transform:translateY(-2px);}
 .card-nogi{background:#180930;border:1px solid #2a1250;}
@@ -298,6 +299,27 @@ body{font-family:'Segoe UI',sans-serif;background:#0e0818;color:#f0e6ff;min-heig
 .pk-note{font-size:.72rem;color:#5a4070;margin-top:6px;}
 .pk-note b{color:#c084fc;font-weight:700;}
 
+/* ── 分頁 ── */
+.pager{display:flex;flex-wrap:wrap;gap:6px;align-items:center;justify-content:center;padding:4px 12px 18px;}
+.pg-btn{border:1px solid #4a2d7a;background:transparent;color:#c084fc;border-radius:8px;
+  padding:6px 12px;font-size:.78rem;cursor:pointer;transition:all .18s;white-space:nowrap;}
+.pg-btn:hover:not(:disabled){background:rgba(168,85,247,.18);color:#e9d5ff;}
+.pg-btn.active{background:rgba(168,85,247,.3);border-color:#a855f7;color:#fff;font-weight:700;}
+.pg-btn:disabled{opacity:.3;cursor:not-allowed;}
+.pg-info{font-size:.74rem;color:#7c5cb0;margin:0 4px;}
+.page-hinata .pg-btn{border-color:#1e6ba0;color:#7dd3fc;}
+.page-hinata .pg-btn:hover:not(:disabled){background:rgba(56,189,248,.18);color:#e0f2fe;}
+.page-hinata .pg-btn.active{background:rgba(56,189,248,.3);border-color:#38bdf8;}
+.page-sakura .pg-btn{border-color:#334155;color:#94a3b8;}
+.page-sakura .pg-btn:hover:not(:disabled){background:rgba(148,163,184,.18);color:#e2e8f0;}
+.page-sakura .pg-btn.active{background:rgba(148,163,184,.3);border-color:#94a3b8;}
+.page-keyaki .pg-btn{border-color:#064e3b;color:#6ee7b7;}
+.page-keyaki .pg-btn:hover:not(:disabled){background:rgba(5,150,105,.18);color:#d1fae5;}
+.page-keyaki .pg-btn.active{background:rgba(5,150,105,.3);border-color:#059669;}
+.page-aoba .pg-btn{border-color:#164e63;color:#22d3ee;}
+.page-aoba .pg-btn:hover:not(:disabled){background:rgba(6,182,212,.18);color:#cffafe;}
+.page-aoba .pg-btn.active{background:rgba(6,182,212,.3);border-color:#06b6d4;}
+
 /* ── 站位圖（固定橫式，卡片依內容撐開，由頁面捲動）── */
 .fm{padding:3px 0 1px;margin-bottom:8px;}
 .fm-inner{display:flex;flex-direction:column;gap:5px;min-width:max-content;}
@@ -399,7 +421,7 @@ body{font-family:'Segoe UI',sans-serif;background:#0e0818;color:#f0e6ff;min-heig
 </div>
 
 <!-- 乃木坂 -->
-<div class="page active" id="page-nogi">
+<div class="page active page-nogi" id="page-nogi">
   <div class="hdr hdr-nogi"><h1>乃木坂46 歷屆單曲選拔名單</h1></div>
   <div class="ctrl ctrl-nogi">
     <input type="text" id="nogi-search" placeholder="🔍 搜尋曲名、成員名…">
@@ -412,11 +434,12 @@ body{font-family:'Segoe UI',sans-serif;background:#0e0818;color:#f0e6ff;min-heig
   <div class="fbar" id="nogi-fbar"><div class="fbox fbox-nogi">📌 篩選：<strong id="nogi-fn"></strong><span id="nogi-fc" style="font-size:.78rem;opacity:.85;"></span><button class="clear-btn clear-nogi" onclick="clearFilter('nogi')">✕ 清除</button></div></div>
   <div class="legend" style="color:#9370c0;"><span><span class="ld" style="background:#ec4899"></span>★ Center</span><span><span class="ld" style="background:#9333ea"></span>福神</span><span><span class="ld" style="background:#6366f1"></span>後排</span></div>
   <div class="grid" id="nogi-grid"></div>
-  <div class="no-results" id="nogi-none" style="display:none">😔 找不到符合條件的結果</div>
+  <div class="pager" id="nogi-pager"></div>
+<div class="no-results" id="nogi-none" style="display:none">😔 找不到符合條件的結果</div>
 </div>
 
 <!-- 日向坂 -->
-<div class="page" id="page-hinata">
+<div class="page page-hinata" id="page-hinata">
   <div class="hdr hdr-hinata"><h1>日向坂46 歷屆單曲選拔名單</h1></div>
   <div class="ctrl ctrl-hinata">
     <input type="text" id="hinata-search" placeholder="🔍 搜尋曲名、成員名…">
@@ -429,11 +452,12 @@ body{font-family:'Segoe UI',sans-serif;background:#0e0818;color:#f0e6ff;min-heig
   <div class="fbar" id="hinata-fbar"><div class="fbox fbox-hinata">📌 篩選：<strong id="hinata-fn"></strong><span id="hinata-fc" style="font-size:.78rem;opacity:.85;"></span><button class="clear-btn clear-hinata" onclick="clearFilter('hinata')">✕ 清除</button></div></div>
   <div class="legend" style="color:#4a90b8;"><span><span class="ld" style="background:#7dd3fc"></span>★ Center</span><span><span class="ld" style="background:#0284c7"></span>前排</span><span><span class="ld" style="background:#0e7490"></span>中排</span><span><span class="ld" style="background:#065f46"></span>後排</span></div>
   <div class="grid" id="hinata-grid"></div>
-  <div class="no-results" id="hinata-none" style="display:none">😔 找不到符合條件的結果</div>
+  <div class="pager" id="hinata-pager"></div>
+<div class="no-results" id="hinata-none" style="display:none">😔 找不到符合條件的結果</div>
 </div>
 
 <!-- 櫻坂 -->
-<div class="page" id="page-sakura">
+<div class="page page-sakura" id="page-sakura">
   <div class="hdr hdr-sakura"><h1>櫻坂46 歷屆單曲選拔名單</h1></div>
   <div class="ctrl ctrl-sakura">
     <input type="text" id="sakura-search" placeholder="🔍 搜尋曲名、成員名…">
@@ -446,11 +470,12 @@ body{font-family:'Segoe UI',sans-serif;background:#0e0818;color:#f0e6ff;min-heig
   <div class="fbar" id="sakura-fbar"><div class="fbox fbox-sakura">📌 篩選：<strong id="sakura-fn"></strong><span id="sakura-fc" style="font-size:.78rem;opacity:.85;"></span><button class="clear-btn clear-sakura" onclick="clearFilter('sakura')">✕ 清除</button></div></div>
   <div class="legend" style="color:#64748b;"><span><span class="ld" style="background:#e2e8f0"></span>★ Center</span><span><span class="ld" style="background:#64748b"></span>前排</span><span><span class="ld" style="background:#475569"></span>中排</span><span><span class="ld" style="background:#334155"></span>後排</span></div>
   <div class="grid" id="sakura-grid"></div>
-  <div class="no-results" id="sakura-none" style="display:none">😔 找不到符合條件的結果</div>
+  <div class="pager" id="sakura-pager"></div>
+<div class="no-results" id="sakura-none" style="display:none">😔 找不到符合條件的結果</div>
 </div>
 
 <!-- 欅坂 -->
-<div class="page" id="page-keyaki">
+<div class="page page-keyaki" id="page-keyaki">
   <div class="hdr hdr-keyaki"><h1>欅坂46 歷屆單曲選拔名單</h1></div>
   <div class="ctrl ctrl-keyaki">
     <input type="text" id="keyaki-search" placeholder="🔍 搜尋曲名、成員名…">
@@ -463,11 +488,12 @@ body{font-family:'Segoe UI',sans-serif;background:#0e0818;color:#f0e6ff;min-heig
   <div class="fbar" id="keyaki-fbar"><div class="fbox fbox-keyaki">📌 篩選：<strong id="keyaki-fn"></strong><span id="keyaki-fc" style="font-size:.78rem;opacity:.85;"></span><button class="clear-btn clear-keyaki" onclick="clearFilter('keyaki')">✕ 清除</button></div></div>
   <div class="legend" style="color:#4a7c59;"><span><span class="ld" style="background:#6ee7b7"></span>★ Center</span><span><span class="ld" style="background:#059669"></span>前排</span><span><span class="ld" style="background:#047857"></span>中排</span><span><span class="ld" style="background:#065f46"></span>後排</span></div>
   <div class="grid" id="keyaki-grid"></div>
-  <div class="no-results" id="keyaki-none" style="display:none">😔 找不到符合條件的結果</div>
+  <div class="pager" id="keyaki-pager"></div>
+<div class="no-results" id="keyaki-none" style="display:none">😔 找不到符合條件的結果</div>
 </div>
 
 <!-- 青葉坂 -->
-<div class="page" id="page-aoba">
+<div class="page page-aoba" id="page-aoba">
   <div class="hdr hdr-aoba"><h1>青葉坂46 歷屆單曲選拔名單</h1></div>
   <div class="ctrl ctrl-aoba">
     <input type="text" id="aoba-search" placeholder="🔍 搜尋曲名、成員名…">
@@ -480,7 +506,8 @@ body{font-family:'Segoe UI',sans-serif;background:#0e0818;color:#f0e6ff;min-heig
   <div class="fbar" id="aoba-fbar"><div class="fbox fbox-aoba">📌 篩選：<strong id="aoba-fn"></strong><span id="aoba-fc" style="font-size:.78rem;opacity:.85;"></span><button class="clear-btn clear-aoba" onclick="clearFilter('aoba')">✕ 清除</button></div></div>
   <div class="legend" style="color:#2e8a9e;"><span><span class="ld" style="background:#22d3ee"></span>★ Center</span><span><span class="ld" style="background:#0891b2"></span>前排</span><span><span class="ld" style="background:#0e7490"></span>中排</span><span><span class="ld" style="background:#164e63"></span>後排</span></div>
   <div class="grid" id="aoba-grid"></div>
-  <div class="no-results" id="aoba-none" style="display:none">😔 找不到符合條件的結果</div>
+  <div class="pager" id="aoba-pager"></div>
+<div class="no-results" id="aoba-none" style="display:none">😔 找不到符合條件的結果</div>
 </div>
 
 <!-- 排行榜側邊面板 -->
@@ -1829,7 +1856,7 @@ function mpFilter(){
   fbtn.style.color=isFiltered?'#fca5a5':color;
 }
 
-const S={nogi:{sort:'desc',filter:[],search:''},hinata:{sort:'desc',filter:[],search:''},sakura:{sort:'desc',filter:[],search:''},keyaki:{sort:'desc',filter:[],search:''},aoba:{sort:'desc',filter:[],search:''}};
+const S={nogi:{sort:'desc',filter:[],search:'',page:1},hinata:{sort:'desc',filter:[],search:'',page:1},sakura:{sort:'desc',filter:[],search:'',page:1},keyaki:{sort:'desc',filter:[],search:'',page:1},aoba:{sort:'desc',filter:[],search:'',page:1}};
 
 // 一張單曲的所有選拔成員：站位與名單取聯集，兩邊不同步時也不會漏人
 function allMembersOf(d){
@@ -1855,17 +1882,17 @@ function switchGroup(g){
   if(location.hash.slice(1)!==g)history.replaceState(null,'','#'+g);
 }
 function setSort(g,o){
-  S[g].sort=o;
+  S[g].sort=o; S[g].page=1;
   const m={nogi:['nd','na'],hinata:['hd','ha'],sakura:['sd','sa'],keyaki:['kd','ka'],aoba:['aod','aoa']};
   document.getElementById(m[g][0]).classList.toggle('active',o==='desc');
   document.getElementById(m[g][1]).classList.toggle('active',o==='asc');
   renderG(g);
 }
-function filterByMember(g,name){const arr=S[g].filter;const i=arr.indexOf(name);if(i>=0)arr.splice(i,1);else arr.push(name);renderG(g);}
-function clearFilter(g){S[g].filter=[];renderG(g);}
+function filterByMember(g,name){const arr=S[g].filter;const i=arr.indexOf(name);if(i>=0)arr.splice(i,1);else arr.push(name);S[g].page=1;renderG(g);}
+function clearFilter(g){S[g].filter=[];S[g].page=1;renderG(g);}
 function debounce(fn,ms){let t;return function(...a){clearTimeout(t);t=setTimeout(()=>fn.apply(this,a),ms);};}
 ['nogi','hinata','sakura','keyaki','aoba'].forEach(g=>{
-  document.getElementById(g+'-search').addEventListener('input',debounce(e=>{S[g].search=e.target.value.trim().toLowerCase();renderG(g);},300));
+  document.getElementById(g+'-search').addEventListener('input',debounce(e=>{S[g].search=e.target.value.trim().toLowerCase();S[g].page=1;renderG(g);},300));
 });
 function hl(s,n){return(s.filter.length&&s.filter.includes(n))||(s.search&&n.toLowerCase().includes(s.search));}
 function makeTag(name,cls,label,g){
@@ -1983,6 +2010,7 @@ function renderG(g){
     grid.innerHTML='<div style="text-align:center;padding:80px 20px;color:#2e8a9e;font-size:.95rem;line-height:2;">🩵 青葉坂46<br><span style="font-size:.8rem;color:#164e63;">2026年8月18日宣布成立<br>期待第一張單曲的發行！</span></div>';
     document.getElementById('ac').textContent='0';document.getElementById('at').textContent='0';
     document.getElementById('aoba-fbar').style.display='none';
+    const pb=document.getElementById('aoba-pager'); if(pb)pb.innerHTML='';
     return;
   }
   let data=getData(g);
@@ -2010,10 +2038,52 @@ function renderG(g){
   document.getElementById(spanId).textContent=data.length;
   document.getElementById(totalId).textContent=total;
   const none=document.getElementById(g+'-none');
-  if(!data.length){grid.innerHTML='';none.style.display='block';return;}
+  if(!data.length){grid.innerHTML='';none.style.display='block';
+    const pb=document.getElementById(g+'-pager'); if(pb)pb.innerHTML='';return;}
   none.style.display='none'; grid.innerHTML='';
-  data.forEach(d=>grid.appendChild(g==='nogi'?buildNogiCard(d,s):buildRowsCard(d,g)));
+  // 分頁：每頁 10 張
+  const pages=Math.max(1,Math.ceil(data.length/PAGE_SIZE));
+  if(s.page>pages)s.page=pages;
+  if(s.page<1)s.page=1;
+  const slice=data.slice((s.page-1)*PAGE_SIZE,s.page*PAGE_SIZE);
+  slice.forEach(d=>grid.appendChild(g==='nogi'?buildNogiCard(d,s):buildRowsCard(d,g)));
+  buildPager(g,data,pages);
   if(rankPanelOpen)buildRankTable();
+}
+const PAGE_SIZE=10;
+function gotoPage(g,n){
+  S[g].page=n;
+  renderG(g);
+  const el=document.getElementById(g+'-grid');
+  if(el)el.scrollIntoView({block:'start',behavior:'smooth'});
+}
+function buildPager(g,data,pages){
+  const box=document.getElementById(g+'-pager');
+  if(!box)return;
+  box.innerHTML='';
+  if(pages<=1)return;
+  const s=S[g],cur=s.page;
+  const mk=(label,page,opt)=>{
+    const b=document.createElement('button');
+    b.className='pg-btn'+(opt&&opt.active?' active':'');
+    b.textContent=label;
+    if(opt&&opt.disabled)b.disabled=true;
+    else b.addEventListener('click',()=>gotoPage(g,page));
+    return b;
+  };
+  box.appendChild(mk('‹ 上一頁',cur-1,{disabled:cur<=1}));
+  for(let i=1;i<=pages;i++){
+    const part=data.slice((i-1)*PAGE_SIZE,i*PAGE_SIZE);
+    const nums=part.map(d=>d.num);
+    const lo=Math.min(...nums),hi=Math.max(...nums);
+    // 標籤直接寫出該頁涵蓋的單曲編號，排序方式不同也一目了然
+    box.appendChild(mk(lo===hi?String(lo):(lo+'-'+hi),i,{active:i===cur}));
+  }
+  box.appendChild(mk('下一頁 ›',cur+1,{disabled:cur>=pages}));
+  const info=document.createElement('span');
+  info.className='pg-info';
+  info.textContent='第 '+cur+' / '+pages+' 頁';
+  box.appendChild(info);
 }
 
 // 初始化（Firestore listeners 會觸發 renderG；若 Firebase 未設定則直接渲染 base data）
