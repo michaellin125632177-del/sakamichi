@@ -1965,7 +1965,7 @@ function genStart(g,gen){
   });
   return best;
 }
-// 圖的起點：加入之後第一張單曲。中間還沒跟團活動的那幾張會標成「未參與」。
+// 圖的起點：加入之後第一張單曲。中間還沒跟團體一起活動的那幾張會標成「未合流」。
 function joinedFrom(g,name,singles){
   const info=getMemberInfo(g,name)||{};
   if(!info.joined)return null;
@@ -2000,11 +2000,12 @@ function memberTrajectory(g,name){
       else if((d.back||[]).includes(name)){band=3;where='Under';}
     }
     if(band===null){
-      // 不在表題曲裡：有 Under 名單才分得出是下 Under 還是根本沒參與
+      // 不在表題曲裡：有 Under 名單才分得出是下 Under 還是還沒跟團體一起活動。
+      // 休養／不參加在上面就先攔掉了，不會落到這一行。
       const u=underMembers(g,d.num);
       if(!u)return {...at,under:true,where:'under'};
       return u.includes(name)?{...at,under:true,where:'under'}
-                             :{...at,idle:true,where:'未參與'};
+                             :{...at,idle:true,where:'未合流'};
     }
     if(isC){band=0;where='Center';}
     // 在該排的中央程度：正中央=1，最邊邊=0
@@ -2074,7 +2075,7 @@ function buildTrajectory(g,name){
   const anyIdle=data.some(d=>d.idle&&d.num>=first);
   if(anyIdle){
     svg.appendChild(el('line',{x1:L,y1:IDLE,x2:R,y2:IDLE,class:'tj-grid'}));
-    const it=el('text',{x:L-5,y:IDLE,class:'tj-band','text-anchor':'end'}); it.textContent='未參與';
+    const it=el('text',{x:L-5,y:IDLE,class:'tj-band','text-anchor':'end'}); it.textContent='未合流';
     svg.appendChild(it);
   }
 
@@ -2141,7 +2142,7 @@ function buildTrajectory(g,name){
     ['tj-c1','前排',      seq.some(d=>d.selected&&d.band===1)],
     ['tj-c2','入選',      seq.some(d=>d.selected&&d.band>=2)],
     ['tj-miss','Under',   seq.some(d=>d.under)],
-    ['tj-idle','未參與',  anyIdle]
+    ['tj-idle','未合流',anyIdle]
   ].filter(x=>x[2]);
   lg.innerHTML='';
   used.forEach(([cls,label])=>{
