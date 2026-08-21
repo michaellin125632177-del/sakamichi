@@ -1027,6 +1027,38 @@ function toggleAuth(){
   });
 }
 
+// ── 舊資料的名字修正 ──
+// 雲端上的單曲是先前匯入的，名冊之後改過寫法就會對不上；一個字不同，
+// 成員面板就查不到人（基本資料或選拔紀錄整段空掉）。讀進來先正規化，
+// 登入時再把修正寫回雲端。
+const NAME_FIXES={
+  '金川沙耶':'金川紗耶',
+  '高本彩花':'髙本彩花',      // 官方用梯子高，與 髙橋未来虹 一致
+  '石塚瑠季':'石塚瑶季',
+  '市來玲奈':'市来玲奈'
+};
+function fixName(n){return NAME_FIXES[n]||n;}
+function fixList(a){return (a||[]).map(fixName);}
+function fixLabels(a){
+  return (a||[]).map(l=>{let o=l;Object.keys(NAME_FIXES).forEach(k=>{o=o.split(k).join(NAME_FIXES[k]);});return o;});
+}
+// 就地修正一筆單曲的所有名字欄位，回傳是否真的改了東西
+function fixEntry(e){
+  let changed=false;
+  const fix=(k,fn)=>{
+    if(!e[k])return;
+    const next=fn(e[k]);
+    if(!sameArr(next,e[k])){e[k]=next;changed=true;}
+  };
+  fix('center',fixList); fix('fukujin',fixList); fix('back',fixList);
+  fix('fukujinLabel',fixLabels);
+  if(Array.isArray(e.rows)){
+    const next=e.rows.map(fixList);
+    if(!sameArr(next,e.rows)){e.rows=next;changed=true;}
+  }
+  return changed;
+}
+
 function toDoc(entry){
   const doc={...entry};
   if(Array.isArray(doc.rows)){[doc.row0,doc.row1,doc.row2]=doc.rows;delete doc.rows;}
@@ -1038,6 +1070,8 @@ function fromDoc(id,data){
     entry.rows=[data.row0||[],data.row1||[],data.row2||[]];
     delete entry.row0;delete entry.row1;delete entry.row2;
   }
+  // 不可列舉：不要跟著進 localStorage 快取或寫回雲端
+  Object.defineProperty(entry,'__fixed',{value:fixEntry(entry),enumerable:false});
   return entry;
 }
 
@@ -1050,7 +1084,7 @@ try{
     firebaseAuth.onAuthStateChanged(u=>{
       authUser=u||null; authReady=true; applyAuthUI();
       // 登入後才執行需要寫入的維護工作
-      if(canEdit())['nogi','hinata','sakura','keyaki','aoba'].forEach(g=>{sweepTrash(g);backfillRows(g);});
+      if(canEdit())['nogi','hinata','sakura','keyaki','aoba'].forEach(g=>{sweepTrash(g);repairNames(g);backfillRows(g);});
       if(canEdit())migrateMemberOverrides();
       const roster=document.getElementById('rosterModal');
       if(roster&&roster.classList.contains('open'))refreshRoster();
@@ -1065,6 +1099,7 @@ try{
         const e=fromDoc(docSnap.id,docSnap.data());
         (e.deleted?trashData[g]:liveData[g]).push(e);
       });
+      repairNames(g);
       liveData[g].sort((a,b)=>b.num-a.num);
       trashData[g].sort((a,b)=>(b.deletedAt||0)-(a.deletedAt||0));
       sweepTrash(g);
@@ -1136,15 +1171,21 @@ function trashDaysLeft(d){
   if(!d.deletedAt)return null;
   return Math.ceil((d.deletedAt+TRASH_TTL_MS-Date.now())/DAY_MS);
 }
-// ── 站位資料回填 ──
-// 舊資料沒有 rows，但內建基礎資料有；成員對得上才寫入，對不上就不動
-const NAME_FIXES={'金川沙耶':'金川紗耶'};
-function fixName(n){return NAME_FIXES[n]||n;}
-function fixList(a){return (a||[]).map(fixName);}
-function fixLabels(a){
-  return (a||[]).map(l=>{let o=l;Object.keys(NAME_FIXES).forEach(k=>{o=o.split(k).join(NAME_FIXES[k]);});return o;});
-}
 function sameArr(a,b){return JSON.stringify(a||[])===JSON.stringify(b||[]);}
+// 把讀取時做過的名字修正寫回雲端，之後就不必每次重算。
+// __fixed 由 fromDoc 標記，寫回後下一次快照就會是 false。
+function repairNames(g){
+  if(!db||!canEdit())return;
+  [].concat(liveData[g]||[],trashData[g]||[]).filter(d=>d.__fixed).forEach(d=>{
+    const patch={};
+    if(d.center)patch.center=d.center;
+    if(d.fukujin)patch.fukujin=d.fukujin;
+    if(d.back)patch.back=d.back;
+    if(d.fukujinLabel)patch.fukujinLabel=d.fukujinLabel;
+    if(Array.isArray(d.rows)){patch.row0=d.rows[0]||[];patch.row1=d.rows[1]||[];patch.row2=d.rows[2]||[];}
+    if(Object.keys(patch).length)db.collection(g).doc(String(d.num)).update(patch).catch(()=>{});
+  });
+}
 function backfillRows(g){
   if(!db||!canEdit())return;
   const base={};
@@ -1153,16 +1194,10 @@ function backfillRows(g){
     const r=base[d.num];
     if(!r)return;
     const patch={};
-    // 順帶修正與 memberDB 不一致的舊寫法，否則成員面板查不到資料
-    const nf=fixList(d.fukujin),nb=fixList(d.back),nc=fixList(d.center),nl=fixLabels(d.fukujinLabel);
-    if(d.fukujin&&!sameArr(nf,d.fukujin))patch.fukujin=nf;
-    if(d.back&&!sameArr(nb,d.back))patch.back=nb;
-    if(d.center&&!sameArr(nc,d.center))patch.center=nc;
-    if(d.fukujinLabel&&!sameArr(nl,d.fukujinLabel))patch.fukujinLabel=nl;
     // 只在從未有過 rows 欄位時回填；使用者刻意清空（row0 存在但為空）就尊重他的選擇
     if(!Array.isArray(d.rows)){
       const inRows=new Set([].concat.apply([],r));
-      const mine=[].concat(nf,nb,[].concat.apply([],d.rows||[]));
+      const mine=[].concat(d.fukujin||[],d.back||[],[].concat.apply([],d.rows||[]));
       // 現有成員必須都在官方隊形內，才敢寫入
       if(mine.length&&mine.every(n=>inRows.has(n))){
         patch.row0=r[0];patch.row1=r[1];patch.row2=r[2];
@@ -1740,6 +1775,7 @@ function yearsBetween(start,end){
 }
 
 function openMemberPanel(g,name){
+  name=fixName(name);          // 舊分享連結可能帶著改寫前的名字
   mpState={g,name};
   memberPanelOpen=true;
   setHash(g+'/m/'+encodeURIComponent(name));
