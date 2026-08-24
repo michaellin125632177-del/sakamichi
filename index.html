@@ -358,7 +358,8 @@ body.is-guest .edit-only{display:none!important;}
 .fm .tag{font-size:.73rem;padding:4px 8px;white-space:nowrap;}
 .fm-note{font-size:.68rem;color:#5a4070;margin:2px 0 8px;padding-left:33px;}
 .fm-box{position:relative;}
-.fm-bar{display:flex;justify-content:flex-end;margin:-2px 0 -2px;}
+.fm-bar{display:flex;justify-content:flex-end;align-items:center;gap:8px;margin:-2px 0 -2px;}
+.fm-song{flex:1;min-width:0;font-size:.68rem;opacity:.75;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
 .fm-pick{appearance:none;-webkit-appearance:none;background:rgba(255,255,255,.04);
   border:1px solid currentColor;border-radius:6px;padding:2px 20px 2px 8px;
   font-size:.65rem;font-family:inherit;cursor:pointer;opacity:.8;
@@ -2015,6 +2016,13 @@ function centerOfRows(rows){
 }
 // 各團 Under 的稱呼
 const UNDER_NAME={hinata:'ひなた坂',sakura:'BACKS'};
+// Under 曲的曲名。切到 Under 站位時要標出來，否則看不出自己在看哪一首。
+const UNDER_TITLE={
+  nogi:{1:'左胸の勇気',2:'狼に口笛を',3:'涙がまだ悲しみだった頃',4:'春のメロディー',5:'13日の金曜日',6:'扇風機',7:'初恋の人を今でも',8:'生まれたままで',9:'ここにいる理由',10:'あの日 僕は咄嗟に嘘をついた',11:'君は僕と会わない方がよかったのかな',12:'別れ際、もっと好きになる',13:'嫉妬の権利',14:'不等号',15:'シークレットグラフィティー',16:'ブランコ',17:'風船は生きている',18:'アンダー',19:'My rule',20:'新しい世界',21:'三角の空き地',22:'日常',23:'滑走路',24:'〜Do my best〜じゃ意味はない',26:'口ほどにもないKISS',27:'錆びたコンパス',28:'マシンガンレイン',29:'届かなくたって…',30:'Under\'s Love',31:'悪い成分',32:'さざ波は戻らない',33:'踏んでしまった',34:'思い出が止まらなくなる',35:'車道側',36:'落とし物',37:'それまでの猶予',38:'交感神経優位',39:'不道徳な夏',40:'純粋とは何か？',41:'愛って羨ましい',42:'フォルテシモ'},
+  hinata:{11:'錆つかない剣を持て!',12:'君を覚えてない',13:'SUZUKA',16:'君と生きる',17:'Empty',18:'風に金木犀'},
+  sakura:{3:'ソニア',4:'I\'m in',7:'確信的クロワッサン',8:'油を注せ！',9:'愛し合いなさい',10:'僕は僕を好きになれない',11:'Nothing special',12:'港区パセリ',13:'木枯らしは泣かない',14:'ドライフルーツ',15:'コインランドリー'}
+};
+function underTitle(g,num){return ((UNDER_TITLE[g]||{})[num])||'';}
 function underLabel(g){return UNDER_NAME[g]||'under';}
 
 // ── 生涯軌跡圖 ──
@@ -2365,6 +2373,7 @@ function buildFormationBlock(d,g,opt,meta){
   const alt=underEntry(g,d.num);
   if(!alt){box.appendChild(buildFormation(d,g,opt));return box;}
   const bar=document.createElement('div'); bar.className='fm-bar';
+  const song=document.createElement('span'); song.className='fm-song';
   const sel=document.createElement('select');
   sel.className='fm-pick '+opt.rlCls;
   sel.setAttribute('aria-label','切換選拔或 Under 站位');
@@ -2379,6 +2388,9 @@ function buildFormationBlock(d,g,opt,meta){
     const on=sel.value==='under';
     host.innerHTML='';
     host.appendChild(buildFormation(on?alt:d,g,opt));
+    // 標出正在看的是哪一首歌；表題曲的曲名卡片標題已經有了，不重複
+    const t=underTitle(g,d.num);
+    song.textContent=(on&&t)?('♪ '+t):'';
     // 上方那行也跟著換，否則人數與 ★ 會對不上眼前的站位
     if(meta){
       const n=on?[].concat.apply([],alt.rows).length:d.total;
@@ -2387,7 +2399,7 @@ function buildFormationBlock(d,g,opt,meta){
     }
   };
   sel.addEventListener('change',()=>{setFmView(g,d.num,sel.value);draw();});
-  bar.appendChild(sel);
+  bar.append(song,sel);
   draw();
   box.append(bar,host);
   return box;
