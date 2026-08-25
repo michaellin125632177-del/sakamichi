@@ -716,6 +716,13 @@ body.is-guest .edit-only{display:none!important;}
       <div class="mr"><label>中排</label><div class="pk" id="pk-a-row1"></div></div>
       <div class="mr"><label>前排</label><div class="pk" id="pk-a-row2"></div></div>
     </div>
+    <div class="mg" id="a-under-sec">
+      <h3 id="a-under-title-h">Under 站位（可留空）</h3>
+      <div class="mr"><label>Under 曲名</label><input type="text" id="a-under-title" placeholder="例：フォルテシモ"></div>
+      <div class="mr"><label>後排</label><div class="pk" id="pk-a-under0"></div></div>
+      <div class="mr"><label>中排</label><div class="pk" id="pk-a-under1"></div></div>
+      <div class="mr"><label>前排</label><div class="pk" id="pk-a-under2"></div></div>
+    </div>
     <div id="a-msg" class="mmsg"></div>
     <div class="mbtns">
       <button class="btn-save" onclick="doAdd()">✚ 新增</button>
@@ -747,6 +754,13 @@ body.is-guest .edit-only{display:none!important;}
         <div class="mr"><label>後排</label><div class="pk" id="pk-e-row0"></div></div>
         <div class="mr"><label>中排</label><div class="pk" id="pk-e-row1"></div></div>
         <div class="mr"><label>前排</label><div class="pk" id="pk-e-row2"></div></div>
+      </div>
+      <div class="mg" id="e-under-sec">
+        <h3 id="e-under-title-h">Under 站位（可留空）</h3>
+        <div class="mr"><label>Under 曲名</label><input type="text" id="e-under-title"></div>
+        <div class="mr"><label>後排</label><div class="pk" id="pk-e-under0"></div></div>
+        <div class="mr"><label>中排</label><div class="pk" id="pk-e-under1"></div></div>
+        <div class="mr"><label>前排</label><div class="pk" id="pk-e-under2"></div></div>
       </div>
     </div>
     <div id="e-msg" class="mmsg"></div>
@@ -1072,16 +1086,18 @@ function fixEntry(e){
   };
   fix('center',fixList); fix('fukujin',fixList); fix('back',fixList);
   fix('fukujinLabel',fixLabels);
-  if(Array.isArray(e.rows)){
-    const next=e.rows.map(fixList);
-    if(!sameArr(next,e.rows)){e.rows=next;changed=true;}
-  }
+  [['rows'],['underRows']].forEach(([k])=>{
+    if(!Array.isArray(e[k]))return;
+    const next=e[k].map(fixList);
+    if(!sameArr(next,e[k])){e[k]=next;changed=true;}
+  });
   return changed;
 }
 
 function toDoc(entry){
   const doc={...entry};
   if(Array.isArray(doc.rows)){[doc.row0,doc.row1,doc.row2]=doc.rows;delete doc.rows;}
+  if(Array.isArray(doc.underRows)){[doc.under0,doc.under1,doc.under2]=doc.underRows;delete doc.underRows;}
   return doc;
 }
 function fromDoc(id,data){
@@ -1089,6 +1105,10 @@ function fromDoc(id,data){
   if(data.row0!==undefined){
     entry.rows=[data.row0||[],data.row1||[],data.row2||[]];
     delete entry.row0;delete entry.row1;delete entry.row2;
+  }
+  if(data.under0!==undefined){
+    entry.underRows=[data.under0||[],data.under1||[],data.under2||[]];
+    delete entry.under0;delete entry.under1;delete entry.under2;
   }
   // 不可列舉：不要跟著進 localStorage 快取或寫回雲端
   Object.defineProperty(entry,'__fixed',{value:fixEntry(entry),enumerable:false});
@@ -1203,6 +1223,7 @@ function repairNames(g){
     if(d.back)patch.back=d.back;
     if(d.fukujinLabel)patch.fukujinLabel=d.fukujinLabel;
     if(Array.isArray(d.rows)){patch.row0=d.rows[0]||[];patch.row1=d.rows[1]||[];patch.row2=d.rows[2]||[];}
+    if(Array.isArray(d.underRows)){patch.under0=d.underRows[0]||[];patch.under1=d.underRows[1]||[];patch.under2=d.underRows[2]||[];}
     if(Object.keys(patch).length)db.collection(g).doc(String(d.num)).update(patch).catch(()=>{});
   });
 }
@@ -2007,6 +2028,18 @@ function underRows(g,num){
   const v=m[num];
   return (v&&v.length&&Array.isArray(v[0]))?v:null;
 }
+// 使用者自己填的 Under 站位（存在單曲文件裡）優先於內建資料
+function ownUnderRows(d){
+  const r=d&&d.underRows;
+  return (Array.isArray(r)&&r.some(x=>Array.isArray(x)&&x.length))
+    ? r.filter(x=>Array.isArray(x)&&x.length) : null;
+}
+function underRowsOf(g,d){return ownUnderRows(d)||underRows(g,d.num);}
+function underListOf(g,d){
+  const own=ownUnderRows(d);
+  return own?[].concat.apply([],own):underMembers(g,d.num);
+}
+function underTitleOf(g,d){return (d&&d.underTitle)||underTitle(g,d.num);}
 // Under 曲的 center 未單獨記錄，比照其他隊形取前排正中央
 function centerOfRows(rows){
   const front=(rows||[])[rows.length-1]||[];
@@ -2072,7 +2105,7 @@ function memberTrajectory(g,name){
                   ||(d.fukujin||[]).includes(name)||(d.back||[]).includes(name);
   let seen=null;
   if(UNDER[g])singles.forEach(d=>{
-    const u=underMembers(g,d.num);
+    const u=underListOf(g,d);
     if(inTitle(d)||(u&&u.includes(name)))seen=(seen===null)?d.num:Math.min(seen,d.num);
   });
   // 從沒出現過的人（例如剛加入的新人）用該期的合流時間當基準
@@ -2105,7 +2138,7 @@ function memberTrajectory(g,name){
       // 不在表題曲裡：休養／不參加在上面就先攔掉了，不會落到這一行。
       // 第一次出現在單曲之前 —— 還沒跟團體合流
       if(canIdle&&d.num<debut)return {...at,idle:true,where:'未合流'};
-      const u=underMembers(g,d.num);
+      const u=underListOf(g,d);
       if(!u)return {...at,under:true,where:underLabel(g)};   // 沒有 Under 名單：維持舊行為
       if(u.includes(name))return {...at,under:true,where:underLabel(g)};
       // 已經合流過卻兩首都沒出現：不參加（畢業前後、未記錄的休養等）
@@ -2363,14 +2396,14 @@ const fmView={};
 function fmViewOf(g,num){return (fmView[g]||{})[num]||'sel';}
 function setFmView(g,num,v){(fmView[g]=fmView[g]||{})[num]=v;}
 // 把 Under 站位包成跟單曲一樣的形狀，好直接餵給 buildFormation
-function underEntry(g,num){
-  const rows=underRows(g,num);
+function underEntry(g,d){
+  const rows=underRowsOf(g,d);
   if(!rows)return null;
   return {rows,center:centerOfRows(rows)};
 }
 function buildFormationBlock(d,g,opt,meta){
   const box=document.createElement('div'); box.className='fm-box';
-  const alt=underEntry(g,d.num);
+  const alt=underEntry(g,d);
   if(!alt){box.appendChild(buildFormation(d,g,opt));return box;}
   const bar=document.createElement('div'); bar.className='fm-bar';
   const song=document.createElement('span'); song.className='fm-song';
@@ -2389,7 +2422,7 @@ function buildFormationBlock(d,g,opt,meta){
     host.innerHTML='';
     host.appendChild(buildFormation(on?alt:d,g,opt));
     // 標出正在看的是哪一首歌；表題曲的曲名卡片標題已經有了，不重複
-    const t=underTitle(g,d.num);
+    const t=underTitleOf(g,d);
     song.textContent=(on&&t)?('♪ '+t):'';
     // 上方那行也跟著換，否則人數與 ★ 會對不上眼前的站位
     if(meta){
@@ -2764,7 +2797,7 @@ function showMsg(elId,type,text,auto){
 function parseCSV(s){return s.split(',').map(x=>x.trim()).filter(Boolean);}
 
 // ── 成員選擇器（先選期別 → 再選成員）──
-const PICKER_SUFFIX=['center','fukujin','back','row0','row1','row2'];
+const PICKER_SUFFIX=['center','fukujin','back','row0','row1','row2','under0','under1','under2'];
 const PICKER_FIELDS=PICKER_SUFFIX.map(x=>'a-'+x);
 // 選擇器同時服務「新增」(a-) 與「編輯」(e-) 兩個視窗
 function pickerPrefix(fid){return fid.slice(0,2);}
@@ -2869,6 +2902,7 @@ function buildPicker(fid){
 // （同一人本來就會同時出現在福神和某一排，兩組之間不可互斥）
 function siblingFields(fid){
   const pre=pickerPrefix(fid);
+  if(/under\d$/.test(fid))return [pre+'under0',pre+'under1',pre+'under2'];
   if(/row\d$/.test(fid))return [pre+'row0',pre+'row1',pre+'row2'];
   if(fid.endsWith('fukujin')||fid.endsWith('back'))return [pre+'fukujin',pre+'back'];
   return [];
@@ -3007,7 +3041,7 @@ function setPicker(fid,list){pickers[fid]=(list||[]).slice();}
 function openAddModal(){
   const h=location.hash.slice(1);
   document.getElementById('a-group').value=['nogi','hinata','sakura','keyaki','aoba'].includes(h)?h:'nogi';
-  ['a-num','a-title','a-zh','a-date'].forEach(id=>{const el=document.getElementById(id);if(el)el.value='';});
+  ['a-num','a-title','a-zh','a-date','a-under-title'].forEach(id=>{const el=document.getElementById(id);if(el)el.value='';});
   resetPickers(); toggleAddSec();
   document.getElementById('a-msg').style.display='none';
   openModal('addModal');
@@ -3017,6 +3051,7 @@ function toggleAddSec(){
   document.getElementById('a-rows-sec').style.display='block';   // 乃木坂也可填站位
   document.getElementById('a-rows-title').textContent=
     {nogi:'乃木坂 — 站位（可留空）',hinata:'日向坂 — 成員隊形',keyaki:'欅坂 — 成員隊形',aoba:'青葉坂 — 成員隊形'}[g]||'櫻坂 — 成員隊形';
+  document.getElementById('a-under-title-h').textContent=underLabel(g)+' 站位（可留空）';
   resetPickers(); rebuildPickers();
 }
 // 乃木坂的福神／後排由站位推導：福神＝前二列，後排＝3列目
@@ -3054,6 +3089,10 @@ function doAdd(){
     if(!r0.length&&!r1.length&&!r2.length){showMsg('a-msg','err','請至少選擇一位選拔成員',false);return;}
     entry.rows=[r0,r1,r2]; entry.total=r0.length+r1.length+r2.length;
   }
+  const uRows=[0,1,2].map(i=>(pickers['a-under'+i]||[]).slice());
+  const uTitle=document.getElementById('a-under-title').value.trim();
+  if(uRows.some(r=>r.length)){entry.underRows=uRows;if(uTitle)entry.underTitle=uTitle;}
+  else if(uTitle){showMsg('a-msg','err','填了 '+underLabel(g)+' 曲名就要選成員，或把曲名清空',false);return;}
   const isWCenter=center.length>1;
   entry.centerLabel=center.map(name=>{
     const hadCenter=getData(g).some(d=>d.center.includes(name));
@@ -3087,6 +3126,12 @@ function openEditModal(g,num){
   setPicker('e-row0',rows[0]||[]);
   setPicker('e-row1',rows[1]||[]);
   setPicker('e-row2',rows[2]||[]);
+  // Under：這張自己存的優先，否則帶入內建資料當起點
+  document.getElementById('e-under-title-h').textContent=underLabel(g)+' 站位（可留空）';
+  document.getElementById('e-under-title').value=underTitleOf(g,d)||'';
+  const ur=underRowsOf(g,d)||[];
+  const pad=[0,1,2].map(i=>ur[ur.length-3+i]||[]);   // 不足三列時靠前排對齊
+  setPicker('e-under0',pad[0]); setPicker('e-under1',pad[1]); setPicker('e-under2',pad[2]);
   rebuildPickers('e-');
   switchMtab('info');
   document.getElementById('e-msg').style.display='none';
@@ -3120,6 +3165,11 @@ function doSaveEdit(){
     if(!r0.length&&!r1.length&&!r2.length){showMsg('e-msg','err','請至少選擇一位選拔成員',false);return;}
     patch.rows=[r0,r1,r2]; patch.total=r0.length+r1.length+r2.length;
   }
+  const uRows=[0,1,2].map(i=>(pickers['e-under'+i]||[]).slice());
+  const uTitle=document.getElementById('e-under-title').value.trim();
+  if(uRows.some(r=>r.length)){patch.underRows=uRows;patch.underTitle=uTitle||'';}
+  else if(uTitle){showMsg('e-msg','err','填了 '+underLabel(g)+' 曲名就要選成員，或把曲名清空',false);return;}
+  else {patch.underRows=[[],[],[]];patch.underTitle='';}
   if(db){
     db.collection(g).doc(String(num)).update(toDoc(patch))
       .then(()=>{showMsg('e-msg','ok','✓ 已儲存！',true);setTimeout(()=>closeModal('editModal'),900);})
