@@ -357,6 +357,10 @@ body.is-guest .edit-only{display:none!important;}
 .fm-tags{display:flex;gap:4px;flex:1;justify-content:center;}
 .fm .tag{font-size:.73rem;padding:4px 8px;white-space:nowrap;}
 .fm-note{font-size:.68rem;color:#5a4070;margin:2px 0 8px;padding-left:33px;}
+.admin-warn{margin-top:8px;padding:8px 10px;border-radius:8px;font-size:.72rem;line-height:1.7;
+  background:rgba(239,68,68,.1);border:1px solid #b91c1c;color:#fca5a5;}
+.admin-warn b{color:#fecaca;}
+.admin-warn code{background:rgba(0,0,0,.3);padding:1px 5px;border-radius:4px;}
 .fm-box{position:relative;}
 .fm-bar{display:flex;justify-content:flex-end;align-items:center;gap:8px;margin:-2px 0 -2px;}
 .fm-song{flex:1;min-width:0;font-size:.68rem;opacity:.75;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
@@ -785,6 +789,7 @@ body.is-guest .edit-only{display:none!important;}
       <div class="mg">
         <h3>⬇ 匯出備份</h3>
         <div class="auth-uid" id="auth-uid"></div>
+        <div class="admin-warn edit-only" id="admin-warn" style="display:none;">⚠️ 尚未設定管理員 UID —— 目前<b>任何登入 Google 的人都能編輯這個網站</b>。把上面的 UID 填進程式碼的 <code>ADMIN_UIDS</code>，並同步修改 Firestore 規則。</div>
         <div class="bk-desc" id="bk-summary">統計中…</div>
         <div class="mbtns"><button class="btn-save" onclick="exportBackup()">⬇ 下載備份檔</button></div>
       </div>
@@ -907,11 +912,12 @@ function buildRankTable(){
     const ctrColor=topColors[rank]||'#c084fc';
     const row=document.createElement('div');
     row.className='rank-row';
-    row.innerHTML='<div class="rank-pos">'+medal+'</div>'
-      +'<div class="rank-bar" style="background:'+barColor[r.mainGroup]+'"></div>'
-      +'<div class="rank-name" style="color:'+nameColor+'">'+r.name+'</div>'
-      +'<div class="rank-ctr" style="color:'+ctrColor+'">'+r.totalCtr+'</div>'
-      +'<div class="rank-sel">'+r.totalSel+'</div>';
+    row.append(
+      elWith('div','rank-pos',medal),
+      elWith('div','rank-bar','','background:'+barColor[r.mainGroup]),
+      elWith('div','rank-name',r.name,'color:'+nameColor),
+      elWith('div','rank-ctr',r.totalCtr,'color:'+ctrColor),
+      elWith('div','rank-sel',r.totalSel));
     body.appendChild(row);
   });
 }
@@ -1029,9 +1035,22 @@ let db=null,firebaseAuth=null,liveData={nogi:[],hinata:[],sakura:[],keyaki:[],ao
 // ── 登入（Google）──
 // 讀取開放給所有人，寫入只允許擁有者。設定 LOCAL 持久化，關掉瀏覽器也維持登入。
 let authUser=null, authReady=false;
-function canEdit(){return !!authUser;}
+// ── 誰可以編輯 ──
+// 網站是公開的，任何人都能用 Google 登入，所以「有登入」不等於「可以改資料」。
+// 把自己的 UID 填進來（登入後在「管理 → 備份」看得到），只有名單內的人能寫入。
+// 留空＝任何登入者都能編輯，僅供尚未設定時過渡用，畫面上會出現提醒。
+// ※ 這只是介面層。真正的把關在 Firestore 規則，兩邊要一起改：
+//   allow write: if request.auth != null && request.auth.uid == '你的UID';
+const ADMIN_UIDS=[];
+function adminListSet(){return ADMIN_UIDS.length>0;}
+function canEdit(){
+  if(!authUser)return false;
+  return adminListSet()?ADMIN_UIDS.includes(authUser.uid):true;
+}
 function applyAuthUI(){
   document.body.classList.toggle('is-guest',!canEdit());
+  const warn=document.getElementById('admin-warn');
+  if(warn)warn.style.display=(authReady&&!adminListSet())?'':'none';
   const b=document.getElementById('auth-btn');
   if(!b)return;
   if(!authReady){b.textContent='⏳';b.disabled=true;return;}
@@ -1045,9 +1064,18 @@ function applyAuthUI(){
     b.title='以 Google 登入後才能編輯';
   }
   const box=document.getElementById('auth-uid');
-  if(box)box.innerHTML=canEdit()
-    ? ('目前登入：<b>'+(authUser.email||authUser.displayName||'')+'</b><br>你的 UID：<code>'+authUser.uid+'</code>')
-    : '尚未登入，僅能瀏覽。';
+  if(box){
+    box.innerHTML='';
+    if(authUser){
+      box.append(document.createTextNode('目前登入：'),
+                 elWith('b',null,authUser.email||authUser.displayName||''),
+                 document.createElement('br'),
+                 document.createTextNode('你的 UID：'),
+                 elWith('code',null,authUser.uid));
+      if(!canEdit())box.append(document.createElement('br'),
+        elWith('b',null,'（此帳號不在管理員名單內，僅能瀏覽）'));
+    } else box.textContent='尚未登入，僅能瀏覽。';
+  }
 }
 function toggleAuth(){
   if(!firebaseAuth){alert('Firebase Auth 未載入。');return;}
@@ -1843,12 +1871,16 @@ function openMemberPanel(g,name){
   if(info){
     const age=info.bday?calcAge(info.bday):null;
     const tenure=info.joined?(info.grad?yearsBetween(info.joined,info.grad):yearsBetween(info.joined,null)):null;
-    infoEl.innerHTML=`
-      <div class="mp-row"><span class="mp-lbl">生日</span><span class="mp-val">${fmtDate(info.bday)}${age!==null?' （'+age+'歲）':''}</span></div>
-      <div class="mp-row"><span class="mp-lbl">入團日期</span><span class="mp-val">${fmtDate(info.joined)}</span></div>
-      ${info.grad?`<div class="mp-row"><span class="mp-lbl">畢業日期</span><span class="mp-val">${fmtDate(info.grad)}</span></div>`:''}
-      ${tenure!==null?`<div class="mp-row"><span class="mp-lbl">${info.grad?'在團期間':'在團年數'}</span><span class="mp-val">${tenure}年</span></div>`:''}
-    `;
+    infoEl.innerHTML='';
+    const infoRow=(lbl,val)=>{
+      const r=document.createElement('div'); r.className='mp-row';
+      r.append(elWith('span','mp-lbl',lbl),elWith('span','mp-val',val));
+      infoEl.appendChild(r);
+    };
+    infoRow('生日',fmtDate(info.bday)+(age!==null?' （'+age+'歲）':''));
+    infoRow('入團日期',fmtDate(info.joined));
+    if(info.grad)infoRow('畢業日期',fmtDate(info.grad));
+    if(tenure!==null)infoRow(info.grad?'在團期間':'在團年數',tenure+'年');
   } else {
     infoEl.innerHTML='<div style="color:#7c5cb0;font-size:.8rem;text-align:center;padding:8px;">暫無個人資料</div>';
   }
@@ -1902,7 +1934,10 @@ function openMemberPanel(g,name){
     const roleClass={center:'ctr',fukujin:'sub',back:'sub',後排:'sub',中排:'sub',前排:'sub',選拔:'sub'};
     recs.forEach(r=>{
       const row=document.createElement('div'); row.className='mp-single';
-      row.innerHTML=`<span class="mp-num">第${r.num}張</span><span class="mp-title">${r.title}</span><span class="mp-role ${roleClass[r.role]||'sub'}">${roleLabel[r.role]||r.role}</span>`;
+      row.append(
+        elWith('span','mp-num','第'+r.num+'張'),
+        elWith('span','mp-title',r.title),
+        elWith('span','mp-role '+(roleClass[r.role]||'sub'),roleLabel[r.role]||r.role));
       list.appendChild(row);
     });
   }
@@ -2249,9 +2284,12 @@ function buildTrajectory(g,name){
   flush();
 
   const show=d=>{
-    cap.innerHTML=d
-      ?('第'+d.num+'張《'+d.title+'》　<b>'+d.where+'</b>'+(d.selected&&d.len>1&&!d.isC?('　第 '+(d.idx+1)+' / '+d.len+' 位'):''))
-      :'點圖上的點可看該單曲';
+    cap.innerHTML='';
+    if(!d){cap.textContent='點圖上的點可看該單曲';return;}
+    cap.append(document.createTextNode('第'+d.num+'張《'+d.title+'》　'),
+               elWith('b',null,d.where));
+    if(d.selected&&d.len>1&&!d.isC)
+      cap.append(document.createTextNode('　第 '+(d.idx+1)+' / '+d.len+' 位'));
   };
   seq.filter(d=>!d.selected&&!d.absent).forEach(d=>{
     const c=el('circle',{cx:X(d.num),cy:yOf(d),r:2.2,
@@ -2361,6 +2399,14 @@ function makeTag(name,cls,label,g){
 function applyHl(sp,s,name){if(hl(s,name))sp.classList.add('hl');}
 
 // 依 rows 畫出真實站位（rows[0]=後排 … rows[2]=前排，陣列順序即舞台左右順序）
+// 建一個元素。文字一律經 textContent，資料不會被當成 HTML 解讀。
+function elWith(tag,cls,text,style){
+  const e=document.createElement(tag);
+  if(cls)e.className=cls;
+  if(text!==undefined&&text!==null)e.textContent=text;
+  if(style)e.setAttribute('style',style);
+  return e;
+}
 function hasFormation(d){return Array.isArray(d.rows)&&d.rows.some(r=>Array.isArray(r)&&r.length);}
 // 站位圖。列數不固定（Under 曲有 1～5 列都有），一律以「離前排多遠」定名稱與配色。
 function buildFormation(d,g,opt){
