@@ -614,13 +614,14 @@ body.is-guest .edit-only{display:none!important;}
   <div style="display:flex;gap:6px;padding:7px 10px;border-bottom:1px solid #2a1250;flex-shrink:0;">
     <button id="rs-ctr" onclick="setRankSort('center')" style="flex:1;padding:5px 4px;border-radius:7px;font-size:.74rem;cursor:pointer;border:1px solid #a855f7;background:rgba(168,85,247,.2);color:#e9d5ff;font-weight:700;">★ Center</button>
     <button id="rs-sel" onclick="setRankSort('select')" style="flex:1;padding:5px 4px;border-radius:7px;font-size:.74rem;cursor:pointer;border:1px solid #4a2d7a;background:transparent;color:#7c5cb0;font-weight:normal;">選拔次數</button>
+    <button id="rs-ten" onclick="setRankSort('tenure')" style="flex:1;padding:5px 4px;border-radius:7px;font-size:.74rem;cursor:pointer;border:1px solid #4a2d7a;background:transparent;color:#7c5cb0;font-weight:normal;">在籍天數</button>
   </div>
   <div style="display:flex;padding:6px 10px;border-bottom:1px solid #2a1250;flex-shrink:0;">
     <div style="width:32px;font-size:.68rem;color:#6b5c8a;text-align:center;"></div>
     <div style="width:20px;"></div>
     <div style="flex:1;font-size:.68rem;color:#6b5c8a;padding-left:4px;">成員</div>
-    <div style="width:44px;font-size:.68rem;color:#a855f7;text-align:center;">C次數</div>
-    <div style="width:44px;font-size:.68rem;color:#6b5c8a;text-align:center;">選拔</div>
+    <div id="rk-h1" style="width:44px;font-size:.68rem;color:#a855f7;text-align:center;">C次數</div>
+    <div id="rk-h2" style="width:44px;font-size:.68rem;color:#6b5c8a;text-align:center;">選拔</div>
   </div>
   <div id="rank-panel-body"></div>
 </div>
@@ -919,18 +920,66 @@ body.is-guest .edit-only{display:none!important;}
 let rankPanelOpen=false;
 let rankSort='center';
 
+const RANK_HEAD={center:['C次數','選拔'],select:['選拔','C次數'],tenure:['天數','年資']};
 function setRankSort(mode){
   rankSort=mode;
-  const ctrBtn=document.getElementById('rs-ctr'),selBtn=document.getElementById('rs-sel');
-  ctrBtn.style.background=mode==='center'?'rgba(168,85,247,.2)':'transparent';
-  ctrBtn.style.borderColor=mode==='center'?'#a855f7':'#4a2d7a';
-  ctrBtn.style.color=mode==='center'?'#e9d5ff':'#7c5cb0';
-  ctrBtn.style.fontWeight=mode==='center'?'700':'normal';
-  selBtn.style.background=mode==='select'?'rgba(168,85,247,.2)':'transparent';
-  selBtn.style.borderColor=mode==='select'?'#a855f7':'#4a2d7a';
-  selBtn.style.color=mode==='select'?'#e9d5ff':'#7c5cb0';
-  selBtn.style.fontWeight=mode==='select'?'700':'normal';
+  [['rs-ctr','center'],['rs-sel','select'],['rs-ten','tenure']].forEach(([id,m])=>{
+    const b=document.getElementById(id); if(!b)return;
+    const on=mode===m;
+    b.style.background=on?'rgba(168,85,247,.2)':'transparent';
+    b.style.borderColor=on?'#a855f7':'#4a2d7a';
+    b.style.color=on?'#e9d5ff':'#7c5cb0';
+    b.style.fontWeight=on?'700':'normal';
+  });
+  const h=RANK_HEAD[mode]||RANK_HEAD.center;
+  const h1=document.getElementById('rk-h1'),h2=document.getElementById('rk-h2');
+  if(h1)h1.textContent=h[0];
+  if(h2)h2.textContent=h[1];
   buildRankTable();
+}
+// ── 在籍天數 ──
+// 同一個人可能在兩個團的名冊裡（櫸坂改名成櫻坂就有 26 位），少數人還是兼任。
+// 直接把各團天數相加會重複計算，所以改成把在籍區間取聯集再算長度。
+const DAY_MS_T=24*60*60*1000;
+function mergeSpans(spans){
+  const sorted=spans.slice().sort((a,b)=>a[0]-b[0]);
+  const out=[];
+  sorted.forEach(sp=>{
+    const last=out[out.length-1];
+    if(last&&sp[0]<=last[1]){if(sp[1]>last[1])last[1]=sp[1];}
+    else out.push([sp[0],sp[1]]);
+  });
+  return out;
+}
+function tenureMap(){
+  const now=Date.now(), map={};
+  ALL_GROUPS.forEach(g=>{
+    const all=getAllMembers(g);
+    Object.keys(all).forEach(name=>{
+      const i=all[name];
+      if(!i.joined)return;
+      const s=new Date(i.joined).getTime();
+      if(isNaN(s))return;
+      let e=now, active=true;
+      if(i.grad){
+        const gd=new Date(i.grad).getTime();
+        if(!isNaN(gd)){e=gd;active=false;}
+      }
+      if(e<s)e=s;
+      const m=map[name]||(map[name]={spans:[],active:false,byGroup:{}});
+      m.spans.push([s,e]);
+      if(active)m.active=true;
+      m.byGroup[g]=(m.byGroup[g]||0)+(e-s);
+    });
+  });
+  Object.keys(map).forEach(name=>{
+    const m=map[name];
+    m.days=Math.round(mergeSpans(m.spans).reduce((a,sp)=>a+(sp[1]-sp[0]),0)/DAY_MS_T);
+    m.years=Math.floor(m.days/365.25);
+    m.mainGroup=Object.keys(m.byGroup).reduce((b,g)=>m.byGroup[g]>m.byGroup[b]?g:b,
+      Object.keys(m.byGroup)[0]);
+  });
+  return map;
 }
 function toggleRankPanel(){
   rankPanelOpen=!rankPanelOpen;
@@ -959,31 +1008,43 @@ function buildRankTable(){
       });
     });
   });
-  const rows=[];
-  Object.keys(ctrMap).forEach(name=>{
+  const ten=tenureMap();
+  // 名單取「這個排法有數字可比的人」：排 Center 就只列當過 Center 的，
+  // 排選拔次數就列入選過的，排在籍就列有入團日的。
+  const pool=rankSort==='tenure'?Object.keys(ten)
+    :rankSort==='select'?Object.keys(selMap):Object.keys(ctrMap);
+  const rows=pool.map(name=>{
     const totalCtr=Object.values(ctrMap[name]||{}).reduce((a,b)=>a+b,0);
     const totalSel=Object.values(selMap[name]||{}).reduce((a,b)=>a+b,0);
-    const mainGroup=groups.reduce((best,g)=>(selMap[name]?.[g]||0)>=(selMap[name]?.[best]||0)?g:best,groups[0]);
-    rows.push({name,totalCtr,totalSel,mainGroup});
+    const t=ten[name];
+    const mainGroup=rankSort==='tenure'&&t&&t.mainGroup?t.mainGroup
+      :groups.reduce((best,g)=>(selMap[name]?.[g]||0)>=(selMap[name]?.[best]||0)?g:best,groups[0]);
+    return {name,totalCtr,totalSel,mainGroup,
+            days:t?t.days:0,years:t?t.years:0,active:!!(t&&t.active)};
   });
-  rows.sort((a,b)=>rankSort==='center'?b.totalCtr-a.totalCtr||b.totalSel-a.totalSel:b.totalSel-a.totalSel||b.totalCtr-a.totalCtr);
-  let rank=0,prevCtr=-1,prevSel=-1,i=0;
+  const key=rankSort==='tenure'?['days','years']
+    :rankSort==='select'?['totalSel','totalCtr']:['totalCtr','totalSel'];
+  rows.sort((a,b)=>b[key[0]]-a[key[0]]||b[key[1]]-a[key[1]]);
+  let rank=0,prev1=null,prev2=null,i=0;
   const body=document.getElementById('rank-panel-body');
   body.innerHTML='';
   rows.forEach(r=>{
     i++;
-    if(r.totalCtr!==prevCtr||r.totalSel!==prevSel){rank=i;prevCtr=r.totalCtr;prevSel=r.totalSel;}
+    if(r[key[0]]!==prev1||r[key[1]]!==prev2){rank=i;prev1=r[key[0]];prev2=r[key[1]];}
     const medal=medals[rank]||(rank<=10?String(rank):'');
     const nameColor=topColors[rank]||'#fff';
     const ctrColor=topColors[rank]||'#c084fc';
+    const v1=rankSort==='tenure'?r.days:r[key[0]];
+    const v2=rankSort==='tenure'?(r.years+'年'+(r.active?'＋':'')):r[key[1]];
     const row=document.createElement('div');
     row.className='rank-row';
+    if(rankSort==='tenure')row.title=r.name+'：在籍 '+r.days+' 天'+(r.active?'（現役，仍在累計）':'');
     row.append(
       elWith('div','rank-pos',medal),
       elWith('div','rank-bar','','background:'+barColor[r.mainGroup]),
       elWith('div','rank-name',r.name,'color:'+nameColor),
-      elWith('div','rank-ctr',r.totalCtr,'color:'+ctrColor),
-      elWith('div','rank-sel',r.totalSel));
+      elWith('div','rank-ctr',v1,'color:'+ctrColor),
+      elWith('div','rank-sel',v2));
     body.appendChild(row);
   });
 }
