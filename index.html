@@ -357,6 +357,28 @@ body.is-guest .edit-only{display:none!important;}
 .fm-tags{display:flex;gap:4px;flex:1;justify-content:center;}
 .fm .tag{font-size:.73rem;padding:4px 8px;white-space:nowrap;}
 .fm-note{font-size:.68rem;color:#5a4070;margin:2px 0 8px;padding-left:33px;}
+.chg{margin:2px 0 8px;border:1px solid #2a1250;border-radius:8px;background:rgba(255,255,255,.02);}
+.chg summary{cursor:pointer;padding:6px 10px;font-size:.7rem;color:#9a7fc0;list-style:none;
+  display:flex;align-items:center;gap:6px;user-select:none;}
+.chg summary::-webkit-details-marker{display:none;}
+.chg summary::after{content:'▾';margin-left:auto;opacity:.6;transition:transform .15s;}
+.chg[open] summary::after{transform:rotate(180deg);}
+.chg summary:hover{color:#c4b5fd;background:rgba(255,255,255,.03);}
+.chg-n{background:rgba(168,85,247,.2);border-radius:10px;padding:0 6px;font-size:.62rem;}
+.chg-body{padding:2px 10px 8px;display:flex;flex-direction:column;gap:4px;}
+.chg-line{display:flex;align-items:center;gap:6px;flex-wrap:wrap;font-size:.7rem;}
+.chg-tag{flex-shrink:0;width:6.4em;font-size:.62rem;padding:2px 4px;border-radius:5px;
+  text-align:center;white-space:nowrap;}
+.chg-ctr{background:rgba(251,191,36,.15);color:#fbbf24;}
+.chg-new{background:rgba(34,197,94,.15);color:#22c55e;}
+.chg-in{background:rgba(56,189,248,.15);color:#38bdf8;}
+.chg-up{background:rgba(236,72,153,.15);color:#f472b6;}
+.chg-down{background:rgba(148,163,184,.15);color:#94a3b8;}
+.chg-out{background:rgba(100,116,139,.15);color:#7c8aa0;}
+.chg-grad{background:rgba(167,139,250,.15);color:#a78bfa;}
+.chg .tag.chg-name{font-size:.7rem;padding:2px 7px;background:rgba(255,255,255,.05);
+  border:1px solid #3a2560;color:#ddd6fe;}
+.chg-move{color:#6b5c8a;font-size:.65rem;}
 .admin-warn{margin-top:8px;padding:8px 10px;border-radius:8px;font-size:.72rem;line-height:1.7;
   background:rgba(239,68,68,.1);border:1px solid #b91c1c;color:#fca5a5;}
 .admin-warn b{color:#fecaca;}
@@ -2407,6 +2429,111 @@ function elWith(tag,cls,text,style){
   if(style)e.setAttribute('style',style);
   return e;
 }
+// ── 單曲異動 ──
+// 把一張單曲的成員攤成「誰在哪個位置」。rank 越小越前面：
+// Center=-1、前排=0、中排=1、後排=2、更後面依序遞增、Under=9。
+function lineupOf(g,d){
+  const out={};
+  const rows=(d.rows||[]).filter(r=>Array.isArray(r)&&r.length);
+  const n=rows.length;
+  rows.forEach((r,ri)=>{
+    const back=n-1-ri;
+    const label=back<3?['前排','中排','後排'][back]:('第'+(back+1)+'列');
+    r.forEach(name=>{out[name]={sel:true,rank:back,label};});
+  });
+  if(!n){   // 沒有站位資料時退回名單分區
+    (d.fukujin||[]).forEach(name=>{out[name]={sel:true,rank:1,label:'福神'};});
+    (d.back||[]).forEach(name=>{if(!out[name])out[name]={sel:true,rank:2,label:'選拔'};});
+  }
+  (d.center||[]).forEach(name=>{out[name]={sel:true,rank:-1,label:'Center',center:true};});
+  (underListOf(g,d)||[]).forEach(name=>{
+    if(!out[name])out[name]={sel:false,rank:9,label:underLabel(g)};
+  });
+  return out;
+}
+// 這張之前，這個人有沒有入選過（用來認初選拔）
+function everSelectedBefore(g,num){
+  const seen=new Set();
+  getData(g).forEach(d=>{
+    if(d.num>=num)return;
+    const L=lineupOf(g,d);
+    for(const name in L)if(L[name].sel)seen.add(name);
+  });
+  return seen;
+}
+function betweenDates(info,from,to){
+  if(!info||!info.grad)return false;
+  const gd=new Date(info.grad), a=singleDate(from), b=singleDate(to);
+  return !isNaN(gd)&&a&&b&&gd>a&&gd<=b;
+}
+// 與前一張比對。回傳分好類的異動；沒有前一張就回 null。
+function lineupDiff(g,cur){
+  const list=getData(g).slice().sort((a,b)=>a.num-b.num);
+  const idx=list.findIndex(d=>d.num===cur.num);
+  if(idx<=0)return null;
+  const prev=list[idx-1];
+  const A=lineupOf(g,prev), B=lineupOf(g,cur);
+  const ever=everSelectedBefore(g,cur.num);
+  const out={prev,center:[],debut:[],in:[],up:[],down:[],out:[],grad:[]};
+  const names=new Set([...Object.keys(A),...Object.keys(B)]);
+  names.forEach(name=>{
+    const a=A[name], b=B[name];
+    if(b&&b.center&&!(a&&a.center)){
+      out.center.push({name,from:a?a.label:'—'});
+      if(a&&a.sel)return;            // 已經用 Center 那行講完了
+    }
+    if(b&&b.sel&&(!a||!a.sel)){
+      (ever.has(name)?out.in:out.debut).push({name,from:a?a.label:'—',to:b.label});
+      return;
+    }
+    if(a&&a.sel&&(!b||!b.sel)){
+      const info=getMemberInfo(g,name);
+      if(betweenDates(info,prev.date,cur.date))out.grad.push({name,from:a.label});
+      else out.out.push({name,from:a.label,to:b?b.label:'—'});
+      return;
+    }
+    if(a&&b&&a.sel&&b.sel&&a.rank!==b.rank){
+      (b.rank<a.rank?out.up:out.down).push({name,from:a.label,to:b.label});
+    }
+  });
+  out.total=out.center.length+out.debut.length+out.in.length
+           +out.up.length+out.down.length+out.out.length+out.grad.length;
+  return out;
+}
+const CHG_ROWS=[
+  ['center','★','Center','chg-ctr'],
+  ['debut','🆕','初選拔','chg-new'],
+  ['in','⤴','進入選拔','chg-in'],
+  ['up','⬆','升排','chg-up'],
+  ['down','⬇','降排','chg-down'],
+  ['out','⤵','掉出選拔','chg-out'],
+  ['grad','🎓','畢業','chg-grad']
+];
+function buildChanges(d,g){
+  const diff=lineupDiff(g,d);
+  if(!diff||!diff.total)return null;
+  const box=document.createElement('details'); box.className='chg';
+  const sum=document.createElement('summary');
+  sum.append(document.createTextNode('🔀 與第'+diff.prev.num+'張的異動'),
+             elWith('span','chg-n',diff.total));
+  box.appendChild(sum);
+  const body=document.createElement('div'); body.className='chg-body';
+  CHG_ROWS.forEach(([key,icon,label,cls])=>{
+    (diff[key]||[]).forEach(it=>{
+      const line=document.createElement('div'); line.className='chg-line';
+      line.append(elWith('span','chg-tag '+cls,icon+' '+label));
+      const who=makeTag(it.name,'chg-name',it.name,g);
+      line.appendChild(who);
+      const move=key==='center'?(it.from+' → Center')
+        :key==='grad'?('最後一張：'+it.from)
+        :(it.from==='—'?it.to:(it.from+' → '+it.to));
+      line.append(elWith('span','chg-move',move));
+      body.appendChild(line);
+    });
+  });
+  box.appendChild(body);
+  return box;
+}
 function hasFormation(d){return Array.isArray(d.rows)&&d.rows.some(r=>Array.isArray(r)&&r.length);}
 // 站位圖。列數不固定（Under 曲有 1～5 列都有），一律以「離前排多遠」定名稱與配色。
 function buildFormation(d,g,opt){
@@ -2526,6 +2653,7 @@ function buildNogiCard(d,s){
     note.style.paddingLeft='0'; note.textContent='※ 此單曲尚未建立站位資料，依名單分區顯示';
     card.append(lbl1,mem1,lbl2,mem2,note);
   }
+  const chg=buildChanges(d,'nogi'); if(chg)card.appendChild(chg);
   card.appendChild(footer);
   return card;
 }
@@ -2560,6 +2688,7 @@ function buildRowsCard(d,g){
   footer.appendChild(sb);
   const eb=document.createElement('button'); eb.className='card-edit-btn edit-only'; eb.textContent='✏️ 編輯';
   eb.addEventListener('click',()=>openEditModal(g,d.num)); footer.appendChild(eb);
+  const chg=buildChanges(d,g); if(chg)card.appendChild(chg);
   card.appendChild(footer);
   return card;
 }
