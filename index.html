@@ -357,6 +357,24 @@ body.is-guest .edit-only{display:none!important;}
 .fm-tags{display:flex;gap:4px;flex:1;justify-content:center;}
 .fm .tag{font-size:.73rem;padding:4px 8px;white-space:nowrap;}
 .fm-note{font-size:.68rem;color:#5a4070;margin:2px 0 8px;padding-left:33px;}
+/* ── 組成推移圖 ── */
+.cp-modes{display:flex;gap:6px;margin-bottom:10px;}
+.cp-mode{flex:1;padding:6px 4px;border-radius:7px;font-size:.76rem;cursor:pointer;
+  border:1px solid #4a2d7a;background:transparent;color:#7c5cb0;font-family:inherit;}
+.cp-mode.active{border-color:#a855f7;background:rgba(168,85,247,.2);color:#e9d5ff;font-weight:700;}
+#cp-chart svg{width:100%;height:auto;display:block;overflow:visible;}
+.cp-grid{stroke:rgba(255,255,255,.07);stroke-width:1;}
+.cp-track{fill:rgba(255,255,255,.05);}
+.cp-lbl{font-size:8px;fill:#6b5c8a;}
+.cp-ylbl{font-size:8px;fill:#6b5c8a;dominant-baseline:middle;text-anchor:end;}
+.cp-hit{fill:#fff;fill-opacity:.001;cursor:pointer;}
+.cp-hit:hover~.cp-hl,.cp-hit:focus~.cp-hl{opacity:1;}
+.cp-legend{display:flex;flex-wrap:wrap;gap:6px 14px;margin-top:8px;font-size:.7rem;color:#9a7fc0;}
+.cp-legend span{display:flex;align-items:center;gap:5px;}
+.cp-legend i{width:10px;height:10px;border-radius:3px;display:inline-block;}
+.cp-cap{font-size:.72rem;color:#7c5cb0;margin-top:8px;min-height:2.4em;line-height:1.7;}
+.cp-cap b{color:#e9d5ff;}
+.cp-empty{text-align:center;padding:50px 10px;color:#7c5cb0;font-size:.85rem;}
 .chg{margin:2px 0 8px;border:1px solid #2a1250;border-radius:8px;background:rgba(255,255,255,.02);}
 .chg summary{cursor:pointer;padding:6px 10px;font-size:.7rem;color:#9a7fc0;list-style:none;
   display:flex;align-items:center;gap:6px;user-select:none;}
@@ -488,6 +506,7 @@ body.is-guest .edit-only{display:none!important;}
     <button class="top-btn edit-only" onclick="openManageModal()">🗑 管理</button>
     <button class="top-btn" onclick="openGlobalSearch()">🔍 跨組</button>
     <button class="top-btn" onclick="toggleRankPanel()">🏆 排行榜</button>
+    <button class="top-btn" onclick="openComp()">📈 推移</button>
     <button class="top-btn" onclick="openRoster()">👤 成員</button>
     <button class="top-btn" id="auth-btn" onclick="toggleAuth()">⏳</button>
   </div>
@@ -604,6 +623,31 @@ body.is-guest .edit-only{display:none!important;}
     <div style="width:44px;font-size:.68rem;color:#6b5c8a;text-align:center;">選拔</div>
   </div>
   <div id="rank-panel-body"></div>
+</div>
+
+<!-- 團體組成推移 Modal -->
+<div class="modal" id="compModal">
+  <div class="modal-box">
+    <h2>📈 團體組成推移</h2>
+    <div class="modal-sub">每張單曲當下的在團人數，以及其中有多少人站上舞台</div>
+    <div class="mr" style="margin-bottom:10px;"><label>選擇團體</label>
+      <select id="cp-group" onchange="buildComp()">
+        <option value="nogi">乃木坂46</option>
+        <option value="hinata">日向坂46</option>
+        <option value="sakura">櫻坂46</option>
+        <option value="keyaki">欅坂46</option>
+        <option value="aoba">青葉坂46</option>
+      </select>
+    </div>
+    <div class="cp-modes">
+      <button class="cp-mode active" id="cp-m-part" onclick="setCompMode('part')">參與狀態</button>
+      <button class="cp-mode" id="cp-m-gen" onclick="setCompMode('gen')">期別組成</button>
+    </div>
+    <div id="cp-chart"></div>
+    <div id="cp-legend" class="cp-legend"></div>
+    <div id="cp-cap" class="cp-cap">把游標移到長條上（或點一下）可看該張單曲</div>
+    <div class="mbtns"><button class="btn-cancel" onclick="closeModal('compModal')">關閉</button></div>
+  </div>
 </div>
 
 <!-- 成員個人面板 -->
@@ -2429,6 +2473,147 @@ function elWith(tag,cls,text,style){
   if(style)e.setAttribute('style',style);
   return e;
 }
+// ── 團體組成推移 ──
+// 顏色取自資料視覺化參考調色盤的暗色階，已用驗證器跑過五項檢查（表面 #1a1230）：
+// 亮度帶、彩度下限、色覺障礙分離度、一般視覺分離度、與背景的對比。
+const CP_PART={sel:'#199e70',under:'#3987e5'};
+const CP_GENS=['#3987e5','#d95926','#199e70','#c98500','#d55181','#008300','#9085e9'];
+const CP_REST='#6b5c8a';
+let compMode='part';
+
+// 每張單曲當下的在團人數，以及選拔／Under 各佔多少
+function compositionOf(g){
+  const all=getAllMembers(g);
+  return getData(g).slice().sort((a,b)=>a.num-b.num).map(d=>{
+    const sd=singleDate(d.date);
+    const roster=Object.keys(all).filter(n=>{
+      const i=all[n];
+      const j=i.joined?new Date(i.joined):null, gd=i.grad?new Date(i.grad):null;
+      return !sd||((!j||j<=sd)&&(!gd||gd>=sd));
+    });
+    const L=lineupOf(g,d);
+    let sel=0,under=0;
+    for(const n in L)L[n].sel?sel++:under++;
+    const byGen={};
+    roster.forEach(n=>{
+      const k=all[n].gen===undefined||all[n].gen===null?'?':String(all[n].gen);
+      byGen[k]=(byGen[k]||0)+1;
+    });
+    // 名冊查不到的人（例如兼任）也要算進總數，否則堆疊會超出長條
+    const total=Math.max(roster.length,sel+under);
+    return {num:d.num,title:d.title,date:d.date,total,sel,under,
+            other:Math.max(0,total-sel-under),byGen};
+  });
+}
+function setCompMode(m){
+  compMode=m;
+  document.getElementById('cp-m-part').classList.toggle('active',m==='part');
+  document.getElementById('cp-m-gen').classList.toggle('active',m==='gen');
+  buildComp();
+}
+function openComp(){
+  const h=(location.hash.slice(1)||'').split('/')[0];
+  document.getElementById('cp-group').value=ALL_GROUPS.includes(h)?h:'nogi';
+  buildComp(); openModal('compModal');
+}
+function buildComp(){
+  const g=document.getElementById('cp-group').value;
+  const host=document.getElementById('cp-chart');
+  const legend=document.getElementById('cp-legend');
+  const cap=document.getElementById('cp-cap');
+  host.innerHTML=''; legend.innerHTML='';
+  const data=compositionOf(g);
+  if(!data.length){
+    host.appendChild(elWith('div','cp-empty','這個團體還沒有單曲資料'));
+    cap.textContent=''; return;
+  }
+  // 期別堆疊的順序固定，超過七期就折成「其他」，不另外生顏色
+  const gens=gensOf(g).map(String);
+  const shown=gens.slice(0,CP_GENS.length), folded=gens.slice(CP_GENS.length);
+  const series=compMode==='gen'
+    ? shown.map((k,i)=>({key:k,label:genLabel(Number(k)),color:CP_GENS[i]}))
+        .concat(folded.length?[{key:'__rest',label:'其他',color:CP_REST}]:[])
+    : [{key:'sel',label:'選拔',color:CP_PART.sel},
+       {key:'under',label:underLabel(g),color:CP_PART.under}];
+
+  const NS='http://www.w3.org/2000/svg';
+  const el=(t,a)=>{const e=document.createElementNS(NS,t);for(const k in a)e.setAttribute(k,a[k]);return e;};
+  const W=640,H=250,L=26,R=632,TOP=10,BASE=222;
+  const max=Math.max(...data.map(d=>d.total),1);
+  const step=(R-L)/data.length;
+  const bw=Math.max(3,Math.min(18,step-3));
+  const Y=v=>BASE-(v/max)*(BASE-TOP);
+  const svg=el('svg',{viewBox:'0 0 '+W+' '+H,role:'img'});
+  svg.setAttribute('aria-label',(compMode==='gen'?'期別組成':'參與狀態')+'推移');
+
+  // 座標軸：只畫幾條淡淡的橫線
+  const tickStep=max<=20?5:max<=60?10:20;
+  for(let v=0;v<=max;v+=tickStep){
+    svg.appendChild(el('line',{x1:L,y1:Y(v),x2:R,y2:Y(v),class:'cp-grid'}));
+    const t=el('text',{x:L-4,y:Y(v),class:'cp-ylbl'}); t.textContent=v; svg.appendChild(t);
+  }
+
+  const show=d=>{
+    cap.innerHTML='';
+    if(!d){cap.textContent='把游標移到長條上（或點一下）可看該張單曲';return;}
+    cap.append(document.createTextNode('第'+d.num+'張《'+d.title+'》　'),
+               elWith('b',null,d.date),document.createElement('br'));
+    const parts=compMode==='gen'
+      ? series.map(sr=>sr.label+' '+(sr.key==='__rest'
+          ? folded.reduce((a,k)=>a+(d.byGen[k]||0),0) : (d.byGen[sr.key]||0))+' 人')
+      : ['在團 '+d.total+' 人','選拔 '+d.sel+' 人',underLabel(g)+' '+d.under+' 人',
+         '未參與 '+d.other+' 人'];
+    cap.append(document.createTextNode(parts.join('　·　')));
+  };
+
+  data.forEach((d,i)=>{
+    const x=L+i*step+(step-bw)/2;
+    // 底色代表當下的在團人數，沒被填滿的部分就是沒站上舞台的人
+    const th=BASE-Y(d.total);
+    if(th>0)svg.appendChild(el('rect',{x,y:Y(d.total),width:bw,height:th,rx:2,class:'cp-track'}));
+    let acc=0;
+    series.forEach(sr=>{
+      const v=compMode==='gen'
+        ? (sr.key==='__rest'?folded.reduce((a,k)=>a+(d.byGen[k]||0),0):(d.byGen[sr.key]||0))
+        : d[sr.key];
+      if(!v)return;
+      const h=(v/max)*(BASE-TOP)-2;          // 段與段之間留 2px 縫
+      if(h>0)svg.appendChild(el('rect',{x,y:Y(acc+v),width:bw,height:h,rx:2,fill:sr.color}));
+      acc+=v;
+    });
+    const hit=el('rect',{x:L+i*step,y:TOP-4,width:step,height:BASE-TOP+8,class:'cp-hit'});
+    hit.addEventListener('pointerenter',()=>show(d));
+    hit.addEventListener('click',()=>show(d));
+    svg.appendChild(hit);
+  });
+
+  // x 軸：首、末，中間每 10 張
+  const first=data[0].num,last=data[data.length-1].num;
+  const ticks=[first,last];
+  for(let n=Math.ceil(first/10)*10;n<last;n+=10)if(n>first+1&&n<last-1)ticks.push(n);
+  [...new Set(ticks)].forEach(n=>{
+    const i=data.findIndex(d=>d.num===n); if(i<0)return;
+    const t=el('text',{x:L+i*step+step/2,y:H-16,class:'cp-lbl','text-anchor':'middle'});
+    t.textContent=n; svg.appendChild(t);
+  });
+  const xl=el('text',{x:R,y:H-3,class:'cp-lbl','text-anchor':'end'});
+  xl.textContent='單曲'; svg.appendChild(xl);
+
+  host.appendChild(svg);
+  series.forEach(sr=>{
+    const sp=document.createElement('span');
+    const i=document.createElement('i'); i.style.background=sr.color;
+    sp.append(i,document.createTextNode(sr.label)); legend.appendChild(sp);
+  });
+  if(compMode==='part'){
+    const sp=document.createElement('span');
+    const i=document.createElement('i');
+    i.style.background='rgba(255,255,255,.05)'; i.style.border='1px solid #3a2560';
+    sp.append(i,document.createTextNode('未參與（在團但兩首都沒出現）')); legend.appendChild(sp);
+  }
+  show(null);
+}
+
 // ── 單曲異動 ──
 // 把一張單曲的成員攤成「誰在哪個位置」。rank 越小越前面：
 // Center=-1、前排=0、中排=1、後排=2、更後面依序遞增、Under=9。
