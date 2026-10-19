@@ -47,7 +47,9 @@ const S=suite('整體煙霧測試');
 
   const card=p.locator('#nogi-grid .card').first();
   S.chk('站位圖有站位標籤', (await card.locator('.fm .tag').count())>0);
-  S.chk('站位切換選單還在', (await card.locator('.fm-pick').count())>0);
+  // 選拔／Under 的切換選單只長在有 under 曲的單曲上，所以看整頁而不是第一張
+  const picks=await p.locator('#nogi-grid .fm-pick').count();
+  S.chk('有 under 曲的單曲帶站位切換選單', picks>0, picks);
 
   await p.evaluate(()=>openMemberPanel('nogi','岩本蓮加')); await p.waitForTimeout(900);
   S.chk('成員面板打得開', (await p.locator('#member-panel.open').count())===1);
