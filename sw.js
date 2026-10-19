@@ -3,7 +3,7 @@
 //   - 頁面導覽走「網路優先」，離線時才回退到快取。避免改版後被舊快取困住。
 //   - 靜態資源（圖示、manifest、Firebase SDK）走「快取優先」並在背景更新。
 //   - Firestore 的 API 流量一律不碰，交給 Firestore 自己的離線持久化。
-const VERSION = 'v1';
+const VERSION = 'v2';   // manifest 改了相對路徑，換版本號確保舊快取被清掉
 const SHELL = 'sakamichi-shell-' + VERSION;
 const RUNTIME = 'sakamichi-runtime-' + VERSION;
 
