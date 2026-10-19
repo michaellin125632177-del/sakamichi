@@ -778,7 +778,7 @@ body.is-guest .edit-only{display:none!important;}
       <div class="mr"><label>單曲編號</label><input type="number" id="a-num" placeholder="例：42"></div>
       <div class="mr"><label>曲名（日文）</label><input type="text" id="a-title"></div>
       <div class="mr"><label>曲名（中文）</label><input type="text" id="a-zh"></div>
-      <div class="mr"><label>發行日期</label><input type="text" id="a-date" placeholder="例：2027年1月1日"></div>
+      <div class="mr"><label>發行日期</label><input type="text" id="a-date" placeholder="例：2027年1月1日" oninput="pickerDateChanged('a-')"></div>
       <div class="mr"><label>Center</label><div class="pk" id="pk-a-center"></div></div>
     </div>
     <div class="mg" id="a-rows-sec" style="display:none">
@@ -815,7 +815,7 @@ body.is-guest .edit-only{display:none!important;}
       <div class="mg">
         <div class="mr"><label>曲名（日文）</label><input type="text" id="e-title"></div>
         <div class="mr"><label>曲名（中文）</label><input type="text" id="e-zh"></div>
-        <div class="mr"><label>發行日期</label><input type="text" id="e-date"></div>
+        <div class="mr"><label>發行日期</label><input type="text" id="e-date" oninput="pickerDateChanged('e-')"></div>
         <div class="mr"><label>Center</label><div class="pk" id="pk-e-center"></div></div>
       </div>
     </div>
@@ -3236,16 +3236,36 @@ function getAllMembers(g){
   Object.entries((loadMemberOverrides()[g])||{}).forEach(([n,i])=>{out[n]={...(out[n]||{}),...i};});
   return out;
 }
-function gensOf(g){
-  const vals=Object.values(getAllMembers(g)).map(i=>i.gen).filter(v=>v!==undefined&&v!==null&&v!=='');
+// 選單只列「這張單曲發行時還在籍」的人：已經畢業的、還沒入團的都不顯示。
+// at 省略時不過濾，其他地方照舊拿得到完整名冊。
+function ymdLocal(str){            // '2016-09-04' → 當地時間的那一天（避免時區差一天）
+  const m=/^(\d{4})-(\d{1,2})-(\d{1,2})/.exec(str||'');
+  return m?new Date(+m[1],+m[2]-1,+m[3]):null;
+}
+function activeAt(info,at){
+  if(!at||!info)return true;
+  const gd=ymdLocal(info.grad);   if(gd&&gd<at)return false;   // 發行當天畢業的仍算在籍
+  const jd=ymdLocal(info.joined); if(jd&&jd>at)return false;
+  return true;
+}
+function gensOf(g,at){
+  const all=getAllMembers(g);
+  const vals=Object.keys(all).filter(n=>activeAt(all[n],at)).map(n=>all[n].gen)
+    .filter(v=>v!==undefined&&v!==null&&v!=='');
   return [...new Set(vals.map(Number))].sort((a,b)=>a-b);
 }
-function membersOf(g,gen){
+function membersOf(g,gen,at){
   return Object.entries(getAllMembers(g))
-    .filter(([,i])=>String(i.gen)===String(gen))
+    .filter(([,i])=>String(i.gen)===String(gen)&&activeAt(i,at))
     .map(([n])=>n)
     .sort((a,b)=>a.localeCompare(b,'ja'));
 }
+// 以表單上的發行日為準；還沒填（或格式看不懂）就以今天為準。
+function pickerAtDate(fid){
+  const el=document.getElementById(pickerPrefix(fid)+'date');
+  return singleDate(el?el.value:'')||new Date();
+}
+function pickerDateChanged(prefix){pickerFields(prefix).forEach(refreshPickerNames);}
 // 已被其他欄位選走的成員（同一張單曲不該重複出現）
 function takenElsewhere(fid){
   const set=new Set();
@@ -3267,17 +3287,24 @@ function buildPicker(fid){
   const addBtn=document.createElement('button'); addBtn.type='button'; addBtn.className='pk-add';
   addBtn.textContent='＋ 加入'; addBtn.disabled=true;
 
-  const gens=gensOf(g);
-  genSel.appendChild(new Option(gens.length?'選擇期別…':'（此團尚無成員資料）',''));
-  gens.forEach(n=>genSel.appendChild(new Option(genLabel(n),String(n))));
-  genSel.appendChild(new Option('✏️ 手動輸入',MANUAL));
+  function fillGens(){
+    const keep=genSel.value;
+    const gens=gensOf(g,pickerAtDate(fid));
+    genSel.innerHTML='';
+    genSel.appendChild(new Option(gens.length?'選擇期別…':'（此團尚無成員資料）',''));
+    gens.forEach(n=>genSel.appendChild(new Option(genLabel(n),String(n))));
+    genSel.appendChild(new Option('✏️ 手動輸入',MANUAL));
+    genSel.value=[...genSel.options].some(o=>o.value===keep)?keep:'';
+  }
+  fillGens();
 
   function fillNames(){
     const gen=genSel.value;
     nameSel.innerHTML='';
     if(gen===''||gen===MANUAL){nameSel.disabled=true;return;}
     const taken=takenElsewhere(fid);
-    const avail=membersOf(g,gen).filter(n=>!(pickers[fid]||[]).includes(n)&&!taken.has(n));
+    const avail=membersOf(g,gen,pickerAtDate(fid))
+      .filter(n=>!(pickers[fid]||[]).includes(n)&&!taken.has(n));
     if(!avail.length){
       nameSel.appendChild(new Option('（本期成員都已選完）',''));
       nameSel.disabled=true;
@@ -3316,7 +3343,7 @@ function buildPicker(fid){
   const chips=document.createElement('div'); chips.className='pk-chips';
   const note=document.createElement('div'); note.className='pk-note';
   host.append(ctrl,chips,note);
-  host._refresh=fillNames;
+  host._refresh=()=>{fillGens();fillNames();};
   renderPickerChips(fid);
 }
 // 互斥分組：福神／後排 是一組，三排站位是另一組
