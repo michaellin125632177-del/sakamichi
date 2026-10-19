@@ -1,0 +1,11 @@
+{
+  "name": "sakamichi-tests",
+  "private": true,
+  "description": "坂道選拔名單的瀏覽器測試",
+  "scripts": {
+    "test": "node run.js"
+  },
+  "devDependencies": {
+    "playwright": "^1.48.0"
+  }
+}
