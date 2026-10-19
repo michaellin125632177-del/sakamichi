@@ -26,7 +26,13 @@ function serve(dir,port){
       res.end(buf);
     });
   });
-  return new Promise(r=>srv.listen(port,'127.0.0.1',()=>r(srv)));
+  return new Promise((resolve,reject)=>{
+    srv.once('error',e=>reject(e.code==='EADDRINUSE'
+      ? new Error('連接埠 '+port+' 已被佔用。先關掉那個程式再跑一次'+
+                  '（例如之前沒收乾淨的 http.server）。')
+      : e));
+    srv.listen(port,'127.0.0.1',()=>resolve(srv));
+  });
 }
 
 // pwa 測試要同時驗「子目錄」與「根目錄」兩種部署，所以多備一份副本
@@ -60,7 +66,15 @@ function runOne(file){
   if(!files.length){console.log('沒有符合的測試檔。');process.exit(0);}
 
   const st=stage();
-  const servers=[await serve(ROOT,8098),await serve(st.sub,8099),await serve(st.root,8100)];
+  let servers=[];
+  try{
+    servers=[await serve(ROOT,8098),await serve(st.sub,8099),await serve(st.root,8100)];
+  }catch(e){
+    servers.forEach(s=>s.close());
+    fs.rmSync(st.tmp,{recursive:true,force:true});
+    console.error('\n✗ '+e.message);
+    process.exit(1);
+  }
   console.log('測試伺服器已啟動（8098 主站、8099 子目錄、8100 根目錄）');
 
   const failed=[];
