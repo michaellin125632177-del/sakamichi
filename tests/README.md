@@ -43,6 +43,7 @@ node tests/run.js admin      # 只跑檔名含 admin 的
 | `picker-date.test.js` | 新增／編輯單曲時，成員選單依發行日只列當時在籍的人 |
 | `pwa.test.js` | manifest 的 `start_url`／`scope` 在兩種部署下都正確 |
 | `smoke.test.js` | 主要畫面都畫得出來、沒有 JS 錯誤 |
+| `tenure.test.js` | 在籍天數排行榜：跨團區間聯集、年資換算、名次與標記 |
 
 ## 寫新測試
 
@@ -86,3 +87,10 @@ await openPage(b,{auth:{signedOut:true}});                // 沒登入
 allow read: if true;
 allow write: if request.auth != null && request.auth.uid == '<站長 UID>';
 ```
+
+## 寫測試時注意「會隨時間變的值」
+
+現役成員的在籍天數每天都在長，所以 `tenure.test.js` 只對**已畢業**的人
+寫死數字（他們的區間固定），現役的一律改成驗推導關係，例如
+「天數等於從入團算到今天」「同分的名次相同」。把現役成員的天數寫死，
+測試隔天就會開始紅。
