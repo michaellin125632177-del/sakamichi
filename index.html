@@ -1168,7 +1168,7 @@ let authUser=null, authReady=false;
 // 留空＝任何登入者都能編輯，僅供尚未設定時過渡用，畫面上會出現提醒。
 // ※ 這只是介面層。真正的把關在 Firestore 規則，兩邊要一起改：
 //   allow write: if request.auth != null && request.auth.uid == '你的UID';
-const ADMIN_UIDS=[];
+const ADMIN_UIDS=['cHr53MtDS0OgfHm7xC9E1CVtbpA2'];
 function adminListSet(){return ADMIN_UIDS.length>0;}
 function canEdit(){
   if(!authUser)return false;
@@ -1186,6 +1186,10 @@ function applyAuthUI(){
   if(canEdit()){
     b.textContent='✓ '+(authUser.displayName||authUser.email||'已登入');
     b.title='點擊登出';
+  } else if(authUser){
+    // 登入了但不是管理員：要講清楚，而且要讓他登得出去
+    b.textContent='👤 '+(authUser.displayName||authUser.email||'已登入');
+    b.title='已登入，但這個帳號沒有編輯權限。點擊登出';
   } else {
     b.textContent='🔑 登入';
     b.title='以 Google 登入後才能編輯';
@@ -1206,7 +1210,7 @@ function applyAuthUI(){
 }
 function toggleAuth(){
   if(!firebaseAuth){alert('Firebase Auth 未載入。');return;}
-  if(canEdit()){ firebaseAuth.signOut(); return; }
+  if(authUser){ firebaseAuth.signOut(); return; }   // 已登入就是登出，有沒有編輯權都一樣
   const provider=new firebase.auth.GoogleAuthProvider();
   firebaseAuth.signInWithPopup(provider).catch(err=>{
     // 手機或 PWA 內彈窗常被擋，改用轉址
