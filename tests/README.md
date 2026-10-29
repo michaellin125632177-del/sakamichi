@@ -45,6 +45,8 @@ node tests/run.js admin      # 只跑檔名含 admin 的
 | `smoke.test.js` | 主要畫面都畫得出來、沒有 JS 錯誤 |
 | `tenure.test.js` | 在籍天數排行榜：跨團區間聯集、年資換算、名次與標記 |
 | `meta.test.js` | 分享預覽（OG／Twitter Card）、favicon、robots.txt |
+| `headers.test.js` | `_headers` 的快取策略與安全標頭 |
+| `headers.js` | `_headers` 的簡易解析器，讓測試伺服器也套用那些標頭 |
 
 ## 寫新測試
 
@@ -95,3 +97,19 @@ allow write: if request.auth != null && request.auth.uid == '<站長 UID>';
 寫死數字（他們的區間固定），現役的一律改成驗推導關係，例如
 「天數等於從入團算到今天」「同分的名次相同」。把現役成員的天數寫死，
 測試隔天就會開始紅。
+
+## `_headers` 只能測到一半
+
+測試伺服器套用 `_headers` 用的是 `headers.js` 裡的**近似實作**，不是
+Cloudflare 本人：只支援開頭或結尾的 `*`，沒有 `:placeholder`，也沒有
+Pages 自己的邊緣快取行為。所以 `headers.test.js` 驗得出語法錯誤、規則
+漏掉的路徑、值寫錯，但**驗不出 Cloudflare 實際會不會照做**。
+
+上線後對正式網站確認一次：
+
+```bash
+curl -sI https://sakamichidb.com/sw.js   | grep -i 'cache-control'   # 要是 no-cache
+curl -sI https://sakamichidb.com/        | grep -i 'cache-control'   # 要有 must-revalidate
+curl -sI https://sakamichidb.com/og.png  | grep -i 'cache-control'   # 要是 max-age=86400
+curl -sI https://sakamichidb.com/        | grep -i 'x-content-type'  # 要是 nosniff
+```
