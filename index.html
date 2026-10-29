@@ -35,12 +35,14 @@
 <meta name="apple-mobile-web-app-title" content="坂道選拔">
 <style>
 *{box-sizing:border-box;margin:0;padding:0;}
-body{font-family:'Segoe UI',sans-serif;background:#0e0818;color:#f0e6ff;min-height:100vh;
-  width:max-content;min-width:100%;}   /* 內容較寬時，橫幅與各列一起延伸，不會只到視窗邊緣 */
+body{font-family:'Segoe UI',sans-serif;background:#0e0818;color:#f0e6ff;min-height:100vh;}
+/* 頁面本身永遠等於視窗寬度。真正會超寬的是站位圖，讓它自己橫捲就好——
+   整份文件跟著變寬的話，手機上連頂部分頁與標題都會被推出畫面。 */
 
 /* ── Top Bar ── */
 .top-bar{background:#090513;border-bottom:2px solid #1e1e1e;position:sticky;top:0;z-index:800;}
-.tab-wrap{display:flex;}
+.tab-wrap{display:flex;overflow-x:auto;scrollbar-width:none;}
+.tab-wrap::-webkit-scrollbar{display:none;}
 .tab-btn{flex:1;padding:12px 4px;font-size:.85rem;font-weight:700;letter-spacing:.5px;cursor:pointer;border:none;background:transparent;border-bottom:3px solid transparent;transition:all .22s;white-space:nowrap;text-align:center;}
 .tab-btn.nogi{color:#a855f7;}
 .tab-btn.nogi.active{color:#e9d5ff;border-bottom-color:#a855f7;background:rgba(168,85,247,.08);}
@@ -54,7 +56,8 @@ body{font-family:'Segoe UI',sans-serif;background:#0e0818;color:#f0e6ff;min-heig
 .tab-btn.aoba.active{color:#cffafe;border-bottom-color:#06b6d4;background:rgba(6,182,212,.08);}
 .tab-btn:hover{opacity:.78;}
 @media(max-width:430px){.tab-btn{padding:12px 1px;font-size:.75rem;letter-spacing:0;}}
-.top-btns{display:flex;gap:6px;padding:7px 10px;}
+.top-btns{display:flex;gap:6px;padding:7px 10px;overflow-x:auto;scrollbar-width:none;}
+.top-btns::-webkit-scrollbar{display:none;}
 .top-btn{flex:1;text-align:center;background:rgba(148,163,184,.15);border:1px solid #475569;color:#94a3b8;padding:7px 10px;border-radius:7px;font-size:.78rem;cursor:pointer;white-space:nowrap;transition:all .2s;}
 .top-btn:hover{background:rgba(148,163,184,.25);color:#e2e8f0;}
 
@@ -137,19 +140,21 @@ body{font-family:'Segoe UI',sans-serif;background:#0e0818;color:#f0e6ff;min-heig
 .ld{width:9px;height:9px;border-radius:50%;display:inline-block;margin-right:3px;vertical-align:middle;}
 
 /* ── Grid / Cards ── */
-.grid{padding:10px 12px;display:grid;grid-template-columns:max-content;gap:10px;justify-content:start;}
-@media(min-width:560px){.grid{grid-template-columns:repeat(2,max-content);padding:14px 20px;gap:12px;}}
-.card{border-radius:12px;padding:12px;transition:transform .2s,box-shadow .2s;display:flex;flex-direction:column;min-width:300px;}
+.grid{padding:10px 12px;display:grid;grid-template-columns:minmax(0,1fr);gap:10px;}
+/* 兩欄的門檻從 560 提高到 720：560 的時候兩欄各只剩約 265px，
+   站位圖幾乎整條都要橫捲，不如先維持單欄看得完整。 */
+@media(min-width:720px){.grid{grid-template-columns:repeat(2,minmax(0,1fr));padding:14px 20px;gap:12px;}}
+.card{border-radius:12px;padding:12px;transition:transform .2s,box-shadow .2s;display:flex;flex-direction:column;min-width:0;}
 .card:hover{transform:translateY(-2px);}
-.card-nogi{background:#180930;border:1px solid #2a1250;}
+.card-nogi{--card-bg:#180930;background:#180930;border:1px solid #2a1250;}
 .card-nogi:hover{box-shadow:0 6px 22px rgba(147,51,234,.18);}
-.card-hinata{background:#0a2540;border:1px solid #0e4070;}
+.card-hinata{--card-bg:#0a2540;background:#0a2540;border:1px solid #0e4070;}
 .card-hinata:hover{box-shadow:0 6px 22px rgba(56,189,248,.1);}
-.card-sakura{background:#0f1f35;border:1px solid #1e3050;}
+.card-sakura{--card-bg:#0f1f35;background:#0f1f35;border:1px solid #1e3050;}
 .card-sakura:hover{box-shadow:0 6px 22px rgba(148,163,184,.1);}
-.card-keyaki{background:#071a12;border:1px solid #064e3b;}
+.card-keyaki{--card-bg:#071a12;background:#071a12;border:1px solid #064e3b;}
 .card-keyaki:hover{box-shadow:0 6px 22px rgba(5,150,105,.15);}
-.card-aoba{background:#071620;border:1px solid #164e63;}
+.card-aoba{--card-bg:#071620;background:#071620;border:1px solid #164e63;}
 .card-aoba:hover{box-shadow:0 6px 22px rgba(6,182,212,.18);}
 .card-hdr{display:flex;justify-content:space-between;align-items:flex-start;gap:8px;margin-bottom:5px;}
 .badge{font-size:.72rem;font-weight:700;padding:3px 9px;border-radius:6px;white-space:nowrap;flex-shrink:0;color:#fff;}
@@ -370,10 +375,22 @@ body.is-guest .edit-only{display:none!important;}
 .page-aoba .pg-btn.active{background:rgba(6,182,212,.3);border-color:#06b6d4;}
 
 /* ── 站位圖（固定橫式，卡片依內容撐開，由頁面捲動）── */
-.fm{padding:3px 0 1px;margin-bottom:8px;}
+.fm{padding:3px 0 1px;margin-bottom:8px;overflow-x:auto;overscroll-behavior-x:contain;
+  scrollbar-width:thin;scrollbar-color:rgba(192,132,252,.35) transparent;}
+.fm::-webkit-scrollbar{height:5px;}
+.fm::-webkit-scrollbar-thumb{background:rgba(192,132,252,.35);border-radius:3px;}
+.fm::-webkit-scrollbar-track{background:transparent;}
 .fm-inner{display:flex;flex-direction:column;gap:5px;min-width:max-content;}
-.fm-row{display:flex;align-items:center;gap:7px;}
-.fm-lbl{width:26px;flex-shrink:0;font-size:.6rem;letter-spacing:.5px;text-align:right;opacity:.7;}
+.fm-row{display:flex;align-items:center;gap:4px;}
+/* 站位圖橫捲時，排別標籤釘在左邊不跟著跑，否則捲到中間就不知道哪排是哪排了。
+   底色取自所屬卡片（--card-bg），讓底下的成員標籤滑過去時不會透出來。 */
+.fm-lbl{width:34px;flex-shrink:0;font-size:.6rem;letter-spacing:.5px;text-align:right;
+  position:sticky;left:0;z-index:2;background:var(--card-bg,#130825);padding-right:8px;}
+/* 注意：這裡不能用 opacity 來調淡——opacity 會連同背景一起變透明，
+   sticky 標籤就擋不住從底下滑過去的成員標籤了。配色沿用各團的 rl-* 類別。 */
+/* 標籤右側拉一段漸層，捲過去的成員標籤是淡出而不是硬切在標籤邊上 */
+.fm-lbl::after{content:'';position:absolute;top:0;bottom:0;left:100%;width:14px;
+  background:linear-gradient(90deg,var(--card-bg,#130825),transparent);pointer-events:none;}
 .fm-tags{display:flex;gap:4px;flex:1;justify-content:center;}
 .fm .tag{font-size:.73rem;padding:4px 8px;white-space:nowrap;}
 .fm-note{font-size:.68rem;color:#5a4070;margin:2px 0 8px;padding-left:33px;}
@@ -2831,7 +2848,17 @@ function buildFormation(d,g,opt){
     line.append(lbl,tags); inner.appendChild(line);
   });
   wrap.appendChild(inner);
+  centerScroll(wrap);
   return wrap;
+}
+// 站位圖比卡片寬時會橫捲。預設停在最左邊的話，正中央的 Center 可能在畫面外——
+// 那正是大家最想先看到的人，所以一開始就捲到中間。
+// 要等版面算完才量得到寬度，因此放到下一個影格。
+function centerScroll(el){
+  requestAnimationFrame(()=>{
+    const over=el.scrollWidth-el.clientWidth;
+    if(over>0)el.scrollLeft=over/2;
+  });
 }
 
 // ── 選拔／Under 站位切換 ──
