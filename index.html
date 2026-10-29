@@ -275,6 +275,7 @@ body{font-family:'Segoe UI',sans-serif;background:#0e0818;color:#f0e6ff;min-heig
   #rank-panel{top:0;right:0;width:300px;height:100vh;border-left:2px solid #2a1250;box-shadow:-6px 0 24px rgba(0,0,0,.5);}
 }
 #rank-panel-body{overflow-y:auto;flex:1;}
+#rk-h0,#rk-h1,#rk-h2{font-size:.68rem;}
 .rank-row{display:flex;align-items:center;padding:7px 10px;border-bottom:1px solid rgba(255,255,255,.04);}
 .rank-row:hover{background:rgba(255,255,255,.025);}
 .rank-pos{width:32px;text-align:center;font-size:.85rem;flex-shrink:0;}
@@ -526,6 +527,49 @@ body.is-guest .edit-only{display:none!important;}
 .me-cancel{padding:10px 14px;background:transparent;border:1px solid #4a2d7a;color:#7c5cb0;border-radius:8px;cursor:pointer;font-size:.85rem;}
 .me-restore{width:100%;margin-top:8px;padding:8px;background:transparent;border:1px solid #7f1d1d;color:#f87171;border-radius:8px;cursor:pointer;font-size:.78rem;}
 .me-restore:hover{background:rgba(239,68,68,.1);}
+
+/* ══════════════════════════════════════════
+   手機版的可讀性與可點性
+   桌機靠滑鼠、看得近，密一點沒問題；手機要用手指點、拿得遠，
+   同一套尺寸就太小了。所以只在單欄（<=720px）時放大，不動桌機密度。
+   ── 字級下限 ──
+   內容文字 12px、純標籤 11px。原本最小到 9.6px，手機上很吃力。
+   ── 觸控目標下限 ──
+   36px。Apple 建議 44、Google 48，但這是資料密集的站，
+   36 是兼顧密度與好點的折衷；最糟的「選拔／Under」下拉原本只有 19px。
+   ══════════════════════════════════════════ */
+@media(max-width:720px){
+  /* 成員標籤是全站最常讀的字 */
+  .tag{font-size:.82rem;padding:5px 10px;}
+  .fm .tag{font-size:.8rem;padding:5px 9px;}
+  .fm-lbl{font-size:.7rem;width:40px;}
+  .card-meta{font-size:.8rem;}
+  .badge{font-size:.76rem;}
+
+  /* 單曲異動表 */
+  .chg-line{font-size:.78rem;}
+  .chg .tag.chg-name{font-size:.78rem;padding:3px 8px;}
+  .chg-tag{font-size:.72rem;padding:3px 5px;}
+  .chg-n{font-size:.72rem;}
+  .chg-move{font-size:.74rem;}
+  .chg summary{font-size:.8rem;}
+
+  /* 排行榜表頭與成員面板 */
+  #rk-h0,#rk-h1,#rk-h2{font-size:.76rem;}
+  .mp-role{font-size:.76rem;}
+  .mp-chart-cap,.mp-chart-hd{font-size:.76rem;}
+  .tj-legend{font-size:.74rem;}
+
+  /* ── 觸控目標 ── */
+  .fm-pick{font-size:.76rem;min-height:34px;padding-top:6px;padding-bottom:6px;}
+  .card-share,.card-edit-btn{min-height:36px;padding:7px 14px;font-size:.8rem;}
+  .pg-btn{min-height:36px;min-width:36px;}
+  .top-btn{min-height:38px;}
+  #rs-ctr,#rs-sel,#rs-ten{min-height:36px;}
+  .sns-link{min-width:36px;min-height:36px;}
+  #mp-share-btn,#mp-edit-btn,#mp-fbtn,#na,#nd,.panel-x,.clear-btn{min-height:36px;}
+  input[type=text],input[type=search],select{min-height:38px;}
+}
 </style>
 </head>
 <body class="is-guest">
@@ -646,7 +690,7 @@ body.is-guest .edit-only{display:none!important;}
       <div style="font-size:.95rem;font-weight:700;color:#e9d5ff;">🏆 排行榜</div>
       <div style="font-size:.72rem;color:#7c5cb0;margin-top:2px;">四坂合計</div>
     </div>
-    <button onclick="toggleRankPanel()" style="background:transparent;border:1px solid #4a2d7a;color:#c084fc;border-radius:6px;padding:4px 10px;cursor:pointer;font-size:.8rem;">✕</button>
+    <button class="panel-x" onclick="toggleRankPanel()" style="background:transparent;border:1px solid #4a2d7a;color:#c084fc;border-radius:6px;padding:4px 10px;cursor:pointer;font-size:.8rem;">✕</button>
   </div>
   <div style="display:flex;gap:6px;padding:7px 10px;border-bottom:1px solid #2a1250;flex-shrink:0;">
     <button id="rs-ctr" onclick="setRankSort('center')" style="flex:1;padding:5px 4px;border-radius:7px;font-size:.74rem;cursor:pointer;border:1px solid #a855f7;background:rgba(168,85,247,.2);color:#e9d5ff;font-weight:700;">★ Center</button>
@@ -656,9 +700,9 @@ body.is-guest .edit-only{display:none!important;}
   <div style="display:flex;padding:6px 10px;border-bottom:1px solid #2a1250;flex-shrink:0;">
     <div style="width:32px;font-size:.68rem;color:#6b5c8a;text-align:center;"></div>
     <div style="width:20px;"></div>
-    <div style="flex:1;font-size:.68rem;color:#6b5c8a;padding-left:4px;">成員</div>
-    <div id="rk-h1" style="width:44px;font-size:.68rem;color:#a855f7;text-align:center;">C次數</div>
-    <div id="rk-h2" style="width:44px;font-size:.68rem;color:#6b5c8a;text-align:center;">選拔</div>
+    <div id="rk-h0" style="flex:1;color:#6b5c8a;padding-left:4px;">成員</div>
+    <div id="rk-h1" style="width:44px;color:#a855f7;text-align:center;">C次數</div>
+    <div id="rk-h2" style="width:44px;color:#6b5c8a;text-align:center;">選拔</div>
   </div>
   <div id="rank-panel-body"></div>
 </div>
@@ -698,7 +742,7 @@ body.is-guest .edit-only{display:none!important;}
     <div style="display:flex;gap:6px;flex-shrink:0;">
       <button id="mp-share-btn" onclick="copyShare(mpState.g+'/m/'+encodeURIComponent(mpState.name),this)" style="background:transparent;border:1px solid #4a2d7a;color:#c084fc;border-radius:6px;padding:4px 10px;cursor:pointer;font-size:.8rem;" title="複製這位成員的連結">🔗</button>
       <button id="mp-edit-btn" class="edit-only" onclick="openMemberEdit(mpState.g,mpState.name)" style="background:transparent;border:1px solid #4a2d7a;color:#c084fc;border-radius:6px;padding:4px 10px;cursor:pointer;font-size:.8rem;" title="編輯成員資料">✏️</button>
-      <button onclick="closeMemberPanel()" style="background:transparent;border:1px solid #4a2d7a;color:#c084fc;border-radius:6px;padding:4px 10px;cursor:pointer;font-size:.8rem;">✕</button>
+      <button class="panel-x" onclick="closeMemberPanel()" style="background:transparent;border:1px solid #4a2d7a;color:#c084fc;border-radius:6px;padding:4px 10px;cursor:pointer;font-size:.8rem;">✕</button>
     </div>
   </div>
   <div id="mp-body">
@@ -939,7 +983,7 @@ body.is-guest .edit-only{display:none!important;}
   <div class="modal-box" style="max-width:700px;">
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">
       <h2>🔍 跨組搜尋</h2>
-      <button onclick="closeGlobalSearch()" style="background:transparent;border:1px solid #4a2d7a;color:#c084fc;border-radius:6px;padding:4px 10px;cursor:pointer;font-size:.8rem;">✕</button>
+      <button class="panel-x" onclick="closeGlobalSearch()" style="background:transparent;border:1px solid #4a2d7a;color:#c084fc;border-radius:6px;padding:4px 10px;cursor:pointer;font-size:.8rem;">✕</button>
     </div>
     <div style="margin-bottom:10px;">
       <input type="text" id="gs-input" placeholder="搜尋曲名或成員名，跨越全部團體…" style="width:100%;background:#0e0818;border:1px solid #4a2d7a;border-radius:8px;color:#f0e6ff;padding:9px 12px;font-size:.88rem;outline:none;">
