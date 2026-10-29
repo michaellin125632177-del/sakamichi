@@ -7,24 +7,30 @@ const {spawn}=require('child_process');
 const fs=require('fs');
 const path=require('path');
 const http=require('http');
+const {load}=require('./headers');
 
 const ROOT=path.join(__dirname,'..');
 const SITE_FILES=['index.html','manifest.json','sw.js','icon-192.png','icon-512.png',
-  'og.png','robots.txt'];
+  'og.png','robots.txt','_headers'];
 
 // ── 內建的靜態伺服器（不想多裝套件）──
 const MIME={'.html':'text/html; charset=utf-8','.js':'text/javascript; charset=utf-8',
   '.json':'application/json; charset=utf-8','.png':'image/png','.svg':'image/svg+xml',
   '.txt':'text/plain; charset=utf-8','.ico':'image/x-icon'};
 function serve(dir,port){
+  // 跟正式環境一樣套用 _headers，測試才驗得到真的回應標頭
+  const hdr=load(path.join(dir,'_headers'));
   const srv=http.createServer((req,res)=>{
-    let p=decodeURIComponent(req.url.split('?')[0]);
+    const urlPath=decodeURIComponent(req.url.split('?')[0]);
+    let p=urlPath;
     if(p.endsWith('/'))p+='index.html';
     const file=path.join(dir,path.normalize(p));
     if(!file.startsWith(dir)){res.writeHead(403);return res.end();}
+    if(path.basename(file)==='_headers'){res.writeHead(404);return res.end('not found');}
     fs.readFile(file,(e,buf)=>{
       if(e){res.writeHead(404);return res.end('not found');}
-      res.writeHead(200,{'Content-Type':MIME[path.extname(file)]||'application/octet-stream'});
+      res.writeHead(200,{'Content-Type':MIME[path.extname(file)]||'application/octet-stream',
+        ...hdr.headersFor(urlPath)});
       res.end(buf);
     });
   });
