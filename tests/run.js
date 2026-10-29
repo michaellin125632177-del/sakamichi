@@ -9,11 +9,13 @@ const path=require('path');
 const http=require('http');
 
 const ROOT=path.join(__dirname,'..');
-const SITE_FILES=['index.html','manifest.json','sw.js','icon-192.png','icon-512.png'];
+const SITE_FILES=['index.html','manifest.json','sw.js','icon-192.png','icon-512.png',
+  'og.png','robots.txt'];
 
 // ── 內建的靜態伺服器（不想多裝套件）──
 const MIME={'.html':'text/html; charset=utf-8','.js':'text/javascript; charset=utf-8',
-  '.json':'application/json; charset=utf-8','.png':'image/png','.svg':'image/svg+xml'};
+  '.json':'application/json; charset=utf-8','.png':'image/png','.svg':'image/svg+xml',
+  '.txt':'text/plain; charset=utf-8','.ico':'image/x-icon'};
 function serve(dir,port){
   const srv=http.createServer((req,res)=>{
     let p=decodeURIComponent(req.url.split('?')[0]);

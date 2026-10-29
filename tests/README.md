@@ -44,6 +44,7 @@ node tests/run.js admin      # 只跑檔名含 admin 的
 | `pwa.test.js` | manifest 的 `start_url`／`scope` 在兩種部署下都正確 |
 | `smoke.test.js` | 主要畫面都畫得出來、沒有 JS 錯誤 |
 | `tenure.test.js` | 在籍天數排行榜：跨團區間聯集、年資換算、名次與標記 |
+| `meta.test.js` | 分享預覽（OG／Twitter Card）、favicon、robots.txt |
 
 ## 寫新測試
 
