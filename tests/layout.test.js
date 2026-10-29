@@ -87,6 +87,61 @@ const SIZES=[[360,780,'小手機'],[390,844,'手機'],[430,932,'大手機'],
 
   S.chk('頁面照常運作', (await p.locator('#nogi-grid .card').count())>0);
 
+  // ── 手機版的可點性與可讀性 ──
+  // 把面板都打開，連同裡面的控制項一起量。
+  await p.evaluate(()=>openMemberPanel('nogi','岩本蓮加'));
+  await p.waitForTimeout(600);
+  await p.click('button[onclick="toggleRankPanel()"]');
+  await p.waitForTimeout(600);
+
+  const UX=await p.evaluate(()=>{
+    const key=e=>{const c=[...e.classList].filter(x=>!/active|is-|open/.test(x));
+      return e.tagName.toLowerCase()+(c.length?'.'+c.join('.'):(e.id?'#'+e.id:''));};
+    const taps=[...document.querySelectorAll('button,select,a[href],input')]
+      .filter(e=>e.offsetParent&&e.getBoundingClientRect().height>0)
+      .map(e=>({k:key(e),h:e.getBoundingClientRect().height}));
+    const texts=[...document.querySelectorAll('*')]
+      .filter(e=>e.offsetParent&&e.children.length===0&&e.textContent.trim())
+      .map(e=>({k:key(e),fs:parseFloat(getComputedStyle(e).fontSize)}));
+    const h=sel=>{const e=document.querySelector(sel);
+      return e?Math.round(e.getBoundingClientRect().height):null;};
+    return {
+      minTap:Math.min(...taps.map(t=>t.h)),
+      worstTap:taps.sort((a,b)=>a.h-b.h)[0],
+      under32:taps.filter(t=>t.h<32).map(t=>t.k),
+      minFont:Math.min(...texts.map(t=>t.fs)),
+      worstFont:texts.sort((a,b)=>a.fs-b.fs)[0],
+      under11:[...new Set(texts.filter(t=>t.fs<11).map(t=>t.k))],
+      share:h('.card-share'), edit:h('.card-edit-btn'),
+      pg:h('.pg-btn'), rank:h('#rs-ten'), pick:h('.fm-pick'),
+      tagFs:parseFloat(getComputedStyle(document.querySelector('.fm .tag')).fontSize)
+    };
+  });
+  S.chk('手機上沒有小於 32px 的可點元素',
+        UX.under32.length===0, UX.under32.join(',')||('最小 '+Math.round(UX.minTap)+'px'));
+  S.chk('最小的可點元素是哪個', UX.minTap>=32,
+        UX.worstTap.k+' '+Math.round(UX.worstTap.h)+'px');
+  [['分享鈕',UX.share],['編輯鈕',UX.edit],['換頁鈕',UX.pg],['排行榜切換',UX.rank]]
+    .forEach(([n,v])=>S.chk('手機上『'+n+'』至少 36px', v>=36, v+'px'));
+  S.chk('手機上『選拔／Under 下拉』至少 34px（原本只有 19px）', UX.pick>=34, UX.pick+'px');
+  S.chk('手機上沒有小於 11px 的字',
+        UX.under11.length===0, UX.under11.join(',')||('最小 '+UX.minFont.toFixed(1)+'px'));
+  S.chk('最小的字是哪個', UX.minFont>=11,
+        UX.worstFont.k+' '+UX.worstFont.fs.toFixed(1)+'px');
+  S.chk('手機上成員標籤至少 12px（全站最常讀的字）', UX.tagFs>=12, UX.tagFs+'px');
+  await p.close();
+
+  // 桌機維持原本的密度，不受手機版放大影響
+  const d=await openPage(b,{viewport:{width:1440,height:900},onError:S.onError});
+  await seed(d);
+  const D=await d.evaluate(()=>({
+    tag:parseFloat(getComputedStyle(document.querySelector('.fm .tag')).fontSize),
+    share:Math.round(document.querySelector('.card-share').getBoundingClientRect().height)
+  }));
+  S.chk('桌機的成員標籤沒有被一起放大', D.tag<UX.tagFs, D.tag+' < '+UX.tagFs);
+  S.chk('桌機的分享鈕維持原本高度', D.share<36, D.share+'px');
+  await d.close();
+
   await b.close();
   const r=S.report();
   process.exit(r.fail||r.errors?1:0);

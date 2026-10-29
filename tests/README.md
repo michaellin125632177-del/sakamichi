@@ -46,7 +46,7 @@ node tests/run.js admin      # 只跑檔名含 admin 的
 | `tenure.test.js` | 在籍天數排行榜：跨團區間聯集、年資換算、名次與標記 |
 | `meta.test.js` | 分享預覽（OG／Twitter Card）、favicon、robots.txt |
 | `headers.test.js` | `_headers` 的快取策略與安全標頭 |
-| `layout.test.js` | 六種視窗寬度下不橫向捲動、站位圖自己捲、排別標籤釘住 |
+| `layout.test.js` | 六種視窗寬度下不橫向捲動、站位圖自己捲、排別標籤釘住、手機版的字級與觸控目標下限 |
 | `headers.js` | `_headers` 的簡易解析器，讓測試伺服器也套用那些標頭 |
 
 ## 寫新測試
