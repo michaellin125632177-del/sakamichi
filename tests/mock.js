@@ -1,6 +1,31 @@
 // 假的 Firebase compat SDK：讓測試不用連網路就能跑整個 app。
 (()=>{
-  const store={nogi:{},hinata:{},sakura:{},keyaki:{},aoba:{},members:{}};
+  const store={nogi:{},hinata:{},sakura:{},keyaki:{},aoba:{},members:{},
+               polls:{},votes:{}};
+  // FieldValue.increment / FieldPath 的最小替身，夠跑投票那條路徑
+  const INC=Symbol('inc');
+  function applyPatch(target,patch){
+    Object.keys(patch).forEach(k=>{
+      const v=patch[k];
+      if(v&&v[INC]!==undefined){target[k]=(typeof target[k]==='number'?target[k]:0)+v[INC];}
+      else if(v&&typeof v==='object'&&!Array.isArray(v)&&typeof target[k]==='object'
+              &&target[k]&&!Array.isArray(target[k])){applyPatch(target[k],v);}
+      else target[k]=clone(v);
+    });
+  }
+  // update(ref, FieldPath, value, FieldPath, value, ...) → 巢狀物件
+  function pathsToPatch(args){
+    const patch={};
+    for(let i=0;i<args.length;i+=2){
+      const segs=args[i]&&args[i].__segs?args[i].__segs:String(args[i]).split('.');
+      let cur=patch;
+      segs.forEach((sg,j)=>{
+        if(j===segs.length-1)cur[sg]=args[i+1];
+        else cur=(cur[sg]=cur[sg]||{});
+      });
+    }
+    return patch;
+  }
   const subs={};
   const clone=v=>JSON.parse(JSON.stringify(v));
   function snapOf(g){
@@ -15,7 +40,9 @@
     batch(){
       const ops=[];
       return {set(ref,d){ops.push(()=>ref.set(d));return this;},
-              update(ref,d){ops.push(()=>ref.update(d));return this;},
+              update(ref,...a){
+                const patch=(a.length===1&&!(a[0]&&a[0].__segs))?a[0]:pathsToPatch(a);
+                ops.push(()=>ref.update(patch));return this;},
               delete(ref){ops.push(()=>ref.delete());return this;},
               commit(){ops.forEach(f=>f());return Promise.resolve();}};
     },
@@ -28,9 +55,10 @@
             get(){return Promise.resolve({id,exists:id in store[g],
                                           data:()=>store[g][id]?clone(store[g][id]):undefined});},
             set(d){store[g][id]=clone(d);notify(g);return Promise.resolve();},
-            update(patch){
-              if(!store[g][id])store[g][id]={};
-              Object.assign(store[g][id],clone(patch));notify(g);return Promise.resolve();},
+            update(...a){
+              if(!store[g][id])throw new Error('not-found: '+g+'/'+id);
+              const patch=(a.length===1&&!(a[0]&&a[0].__segs))?a[0]:pathsToPatch(a);
+              applyPatch(store[g][id],patch);notify(g);return Promise.resolve();},
             delete(){delete store[g][id];notify(g);return Promise.resolve();}};
         },
         onSnapshot(cb){ (subs[g]=subs[g]||[]).push(cb); setTimeout(()=>cb(snapOf(g)),0);
@@ -52,13 +80,21 @@
       auth.currentUser=signInUser;if(authCb)authCb(signInUser);
       return Promise.resolve({user:signInUser});},
     signInWithRedirect(){return Promise.resolve();},
+    signInAnonymously(){
+      window.__anonCalls=(window.__anonCalls||0)+1;
+      const u={uid:'anon-'+(cfg.anonUid||'1'),isAnonymous:true,displayName:null,email:null};
+      auth.currentUser=u; if(authCb)authCb(u);
+      return Promise.resolve({user:u});},
     signOut(){window.__signOutCalls=(window.__signOutCalls||0)+1;
       auth.currentUser=null;if(authCb)authCb(null);return Promise.resolve();}
   };
   const authFn=()=>auth;
   authFn.GoogleAuthProvider=function(){this.addScope=()=>{};this.setCustomParameters=()=>{};};
   authFn.Auth={Persistence:{LOCAL:'local',SESSION:'session',NONE:'none'}};
-  window.firebase={initializeApp(){return {};},firestore:()=>fs,auth:authFn};
+  const firestoreFn=()=>fs;
+  firestoreFn.FieldValue={increment(n){return {[INC]:n};}};
+  firestoreFn.FieldPath=function(...segs){this.__segs=segs;};
+  window.firebase={initializeApp(){return {};},firestore:firestoreFn,auth:authFn};
   window.__store=store;
   window.__signOut=()=>auth.signOut();
   window.__signIn=()=>auth.signInWithPopup();

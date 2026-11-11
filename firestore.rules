@@ -1,0 +1,85 @@
+rules_version = '2';
+
+// 坂道選拔名單的 Firestore 規則。
+// 改這個檔案「不會」生效 —— 它只是版控用的副本。
+// 真正要生效必須到 Firebase Console → Firestore Database → 規則，
+// 把內容貼進去再按「發布」。
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function isOwner() {
+      return request.auth != null
+          && request.auth.uid == 'cHr53MtDS0OgfHm7xC9E1CVtbpA2';
+    }
+
+    // ── 單曲與成員名冊：公開讀，只有站長能寫 ──
+    match /nogi/{doc}    { allow read: if true; allow write: if isOwner(); }
+    match /hinata/{doc}  { allow read: if true; allow write: if isOwner(); }
+    match /sakura/{doc}  { allow read: if true; allow write: if isOwner(); }
+    match /keyaki/{doc}  { allow read: if true; allow write: if isOwner(); }
+    match /aoba/{doc}    { allow read: if true; allow write: if isOwner(); }
+    match /members/{doc} { allow read: if true; allow write: if isOwner(); }
+
+    // ── C 位預測 ──
+    // 票數直接累加在 poll 文件的 tally 裡，訪客只要讀 1 筆就看得到全部票數。
+    // 代價是訪客得有權限改這筆文件，所以下面把「能改什麼」鎖得很死。
+    match /polls/{pid} {
+      allow read: if true;
+      allow create, delete: if isOwner();
+
+      // 站長可以任意改；訪客只能做「投一票」這件事
+      allow update: if isOwner() || isVoteBump(pid);
+
+      // 這次 update 只動了 tally 與 voteCount
+      function onlyTally() {
+        return request.resource.data.diff(resource.data)
+               .affectedKeys().hasOnly(['tally', 'voteCount']);
+      }
+      // tally 裡只有一個人的票數變動，而且剛好 +1
+      function bumpedOne() {
+        return request.resource.data.tally.diff(resource.data.tally)
+                 .affectedKeys().size() == 1
+            && request.resource.data.voteCount == resource.data.voteCount + 1;
+      }
+      // 變動的那個人，必須就是這位使用者剛寫進去的那張票所投的人
+      function matchesMyVote(pid) {
+        let picked = request.resource.data.tally
+                       .diff(resource.data.tally).affectedKeys();
+        let v = get(/databases/$(database)/documents/votes/
+                    $(pid + '_' + request.auth.uid)).data;
+        return picked.hasOnly([v.pick])
+            && request.resource.data.tally[v.pick]
+               == (v.pick in resource.data.tally
+                   ? resource.data.tally[v.pick] : 0) + 1;
+      }
+      function isVoteBump(pid) {
+        return request.auth != null
+            && resource.data.closed == false
+            && resource.data.answer == ''
+            && onlyTally()
+            && bumpedOne()
+            && matchesMyVote(pid);
+      }
+    }
+
+    // 一人一票：文件 id 必須是 {pollId}_{uid}，所以同一個人只佔得到一格。
+    // 只准 create，不准改也不准刪 —— 投出去就算數。
+    match /votes/{vid} {
+      allow read: if true;
+      allow update, delete: if isOwner();
+      allow create: if request.auth != null
+        && vid == request.resource.data.pollId + '_' + request.auth.uid
+        && request.resource.data.uid == request.auth.uid
+        && request.resource.data.keys().hasOnly(
+             ['pollId', 'uid', 'pick', 'nick', 'at'])
+        && request.resource.data.pick is string
+        && request.resource.data.nick is string
+        && request.resource.data.nick.size() <= 16
+        // 只能投在候選名單內，而且那個預測還開著
+        && exists(/databases/$(database)/documents/polls/$(request.resource.data.pollId))
+        && request.resource.data.pick in
+             get(/databases/$(database)/documents/polls/
+                 $(request.resource.data.pollId)).data.candidates;
+    }
+  }
+}

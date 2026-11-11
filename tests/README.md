@@ -43,6 +43,7 @@ node tests/run.js admin      # 只跑檔名含 admin 的
 | `picker-date.test.js` | 新增／編輯單曲時，成員選單依發行日只列當時在籍的人 |
 | `pwa.test.js` | manifest 的 `start_url`／`scope` 在兩種部署下都正確 |
 | `smoke.test.js` | 主要畫面都畫得出來、沒有 JS 錯誤 |
+| `poll.test.js` | C 位預測：候選名單、匿名投票、票數累加、開獎 |
 | `tenure.test.js` | 在籍天數排行榜：跨團區間聯集、年資換算、名次與標記 |
 | `meta.test.js` | 分享預覽（OG／Twitter Card）、favicon、robots.txt |
 | `headers.test.js` | `_headers` 的快取策略與安全標頭 |
@@ -114,3 +115,10 @@ curl -sI https://sakamichidb.com/        | grep -i 'cache-control'   # 要有 mu
 curl -sI https://sakamichidb.com/og.png  | grep -i 'cache-control'   # 要是 max-age=86400
 curl -sI https://sakamichidb.com/        | grep -i 'x-content-type'  # 要是 nosniff
 ```
+
+## Firestore 規則測不到
+
+`firestore.rules` 是版控用的副本，**改它不會生效**——要到 Firebase Console
+貼上去再發布。假的 Firebase 沒有規則引擎，所以 `poll.test.js` 驗的是
+前端那一半（誰看得到什麼、票怎麼寫、票數怎麼加），擋不擋得住惡意寫入
+只能在線上驗。
