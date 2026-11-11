@@ -528,6 +528,38 @@ body.is-guest .edit-only{display:none!important;}
 .me-restore{width:100%;margin-top:8px;padding:8px;background:transparent;border:1px solid #7f1d1d;color:#f87171;border-radius:8px;cursor:pointer;font-size:.78rem;}
 .me-restore:hover{background:rgba(239,68,68,.1);}
 
+/* ── C 位預測 ── */
+#poll-btn.has-poll{border-color:#f59e0b;color:#fcd34d;background:rgba(245,158,11,.12);}
+.poll-card{background:#120a24;border:1px solid #3a2060;border-radius:11px;
+  padding:12px;margin-bottom:11px;}
+.poll-head{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:5px;}
+.poll-title{font-weight:700;color:#e9d5ff;font-size:.92rem;flex:1;min-width:0;}
+.poll-state{font-size:.68rem;padding:2px 9px;border-radius:9px;
+  border:1px solid #4a2d7a;color:#7c5cb0;white-space:nowrap;}
+.poll-state.is-open{border-color:#f59e0b;color:#fcd34d;background:rgba(245,158,11,.12);}
+.poll-meta{font-size:.72rem;color:#7c5cb0;margin-bottom:9px;}
+.poll-ans{font-size:.82rem;color:#fcd34d;background:rgba(245,158,11,.1);
+  border:1px solid rgba(245,158,11,.35);border-radius:8px;padding:7px 10px;margin-bottom:9px;}
+.poll-empty{color:#64748b;font-size:.8rem;padding:10px 2px;text-align:center;}
+.poll-note{font-size:.72rem;color:#7c5cb0;margin-top:7px;}
+.poll-pick{display:flex;gap:7px;flex-wrap:wrap;align-items:center;}
+.poll-pick select{flex:1;min-width:190px;background:#0e0818;border:1px solid #4a2d7a;
+  border-radius:8px;color:#f0e6ff;padding:9px 11px;font-size:.84rem;outline:none;}
+.poll-admin{display:flex;gap:7px;margin-top:10px;padding-top:9px;
+  border-top:1px solid rgba(255,255,255,.05);}
+.poll-admin .pg-btn.danger{border-color:#7f1d1d;color:#fca5a5;}
+/* 票數長條 */
+.pv{display:flex;flex-direction:column;gap:5px;}
+.pv-row{display:flex;align-items:center;gap:8px;font-size:.78rem;}
+.pv-name{width:7.5em;flex-shrink:0;color:#d8c7f5;overflow:hidden;
+  text-overflow:ellipsis;white-space:nowrap;}
+.pv-name.is-mine{color:#fff;font-weight:700;}
+.pv-name.is-ans{color:#fcd34d;font-weight:700;}
+.pv-track{flex:1;height:9px;background:rgba(255,255,255,.06);border-radius:5px;overflow:hidden;}
+.pv-fill{height:100%;background:#9333ea;border-radius:5px;}
+.pv-fill.is-ans{background:#f59e0b;}
+.pv-n{width:3.6em;text-align:right;color:#9370c0;flex-shrink:0;}
+
 /* ══════════════════════════════════════════
    手機版的可讀性與可點性
    桌機靠滑鼠、看得近，密一點沒問題；手機要用手指點、拿得遠，
@@ -561,6 +593,8 @@ body.is-guest .edit-only{display:none!important;}
   .tj-legend{font-size:.74rem;}
 
   /* ── 觸控目標 ── */
+  .poll-pick select{min-height:38px;font-size:.86rem;}
+  .pv-row{font-size:.82rem;}
   .fm-pick{font-size:.76rem;min-height:34px;padding-top:6px;padding-bottom:6px;}
   .card-share,.card-edit-btn{min-height:36px;padding:7px 14px;font-size:.8rem;}
   .pg-btn{min-height:36px;min-width:36px;}
@@ -589,6 +623,7 @@ body.is-guest .edit-only{display:none!important;}
     <button class="top-btn" onclick="toggleRankPanel()">🏆 排行榜</button>
     <button class="top-btn" onclick="openComp()">📈 推移</button>
     <button class="top-btn" onclick="openRoster()">👤 成員</button>
+    <button class="top-btn" id="poll-btn" onclick="openPollModal()">🎯 預測</button>
     <button class="top-btn" id="auth-btn" onclick="toggleAuth()">⏳</button>
   </div>
 </div>
@@ -708,6 +743,23 @@ body.is-guest .edit-only{display:none!important;}
 </div>
 
 <!-- 團體組成推移 Modal -->
+<div class="modal" id="pollModal">
+  <div class="modal-box">
+    <h2>🎯 下一張單曲的 C 位預測</h2>
+    <div class="modal-sub">猜猜看誰會是 center。投完才看得到目前票數。</div>
+    <div class="mr" style="margin-top:12px;">
+      <label for="poll-nick">你的暱稱（會跟著你的預測顯示，隨時可改）</label>
+      <input type="text" id="poll-nick" maxlength="16" placeholder="例：坂道老司機">
+    </div>
+    <div id="poll-list"></div>
+    <div id="poll-msg" class="mmsg"></div>
+    <div class="mbtns">
+      <button class="btn-cancel" onclick="closeModal('pollModal')">關閉</button>
+      <button class="btn-save edit-only" onclick="openNewPoll()">＋ 開一個新預測</button>
+    </div>
+  </div>
+</div>
+
 <div class="modal" id="compModal">
   <div class="modal-box">
     <h2>📈 團體組成推移</h2>
@@ -1268,7 +1320,7 @@ function applyAuthUI(){
   if(canEdit()){
     b.textContent='✓ '+(authUser.displayName||authUser.email||'已登入');
     b.title='點擊登出';
-  } else if(authUser){
+  } else if(authUser&&!authUser.isAnonymous){
     // 登入了但不是管理員：要講清楚，而且要讓他登得出去
     b.textContent='👤 '+(authUser.displayName||authUser.email||'已登入');
     b.title='已登入，但這個帳號沒有編輯權限。點擊登出';
@@ -1280,8 +1332,9 @@ function applyAuthUI(){
   if(box){
     box.innerHTML='';
     if(authUser){
-      box.append(document.createTextNode('目前登入：'),
-                 elWith('b',null,authUser.email||authUser.displayName||''),
+      box.append(document.createTextNode(authUser.isAnonymous?'目前身分：':'目前登入：'),
+                 elWith('b',null,authUser.isAnonymous?'匿名（僅用於預測投票）'
+                                   :(authUser.email||authUser.displayName||'')),
                  document.createElement('br'),
                  document.createTextNode('你的 UID：'),
                  elWith('code',null,authUser.uid));
@@ -1292,7 +1345,8 @@ function applyAuthUI(){
 }
 function toggleAuth(){
   if(!firebaseAuth){alert('Firebase Auth 未載入。');return;}
-  if(authUser){ firebaseAuth.signOut(); return; }   // 已登入就是登出，有沒有編輯權都一樣
+  // 匿名身分只是給預測投票用的，不該被當成「已登入」，按鈕要留著讓人登入
+  if(authUser&&!authUser.isAnonymous){ firebaseAuth.signOut(); return; }
   const provider=new firebase.auth.GoogleAuthProvider();
   firebaseAuth.signInWithPopup(provider).catch(err=>{
     // 手機或 PWA 內彈窗常被擋，改用轉址
@@ -1354,6 +1408,254 @@ function fromDoc(id,data){
   // 不可列舉：不要跟著進 localStorage 快取或寫回雲端
   Object.defineProperty(entry,'__fixed',{value:fixEntry(entry),enumerable:false});
   return entry;
+}
+
+// ══════════════════════════════════════════
+// 單曲 C 位預測
+// ══════════════════════════════════════════
+// 設計上最重要的一點：票數是用 FieldValue.increment 直接累加在 poll 文件裡，
+// 訪客只要讀那一筆就看得到全部票數。若改成「讀完每一張票再自己數」，
+// 500 票 × 100 個訪客就是 5 萬次讀取，免費額度一天就爆了。
+const POLL_COL='polls', VOTE_COL='votes';
+const NICK_KEY='sakamichi-nick';
+const NICK_MAX=16;
+let pollData=[], pollReady=false, myVotes={};   // pollId -> {pick,nick}
+
+function pollId(g,num){return g+'_'+num;}
+function voteId(pid,uid){return pid+'_'+uid;}
+
+// 暱稱：訪客自己取，存在這台裝置上，投票時一起寫進票裡
+function cleanNick(v){
+  return String(v||'').replace(/[\u0000-\u001f\u007f]/g,'').trim().slice(0,NICK_MAX);
+}
+function myNick(){return cleanNick(localStorage.getItem(NICK_KEY)||'');}
+function setMyNick(v){
+  const n=cleanNick(v);
+  try{ n?localStorage.setItem(NICK_KEY,n):localStorage.removeItem(NICK_KEY); }catch(e){}
+  return n;
+}
+
+function pollOpen(p){
+  if(p.closed)return false;
+  // 答案可能是自動從單曲的 center 對上的，不是只看 p.answer 這個欄位，
+  // 否則單曲一公布、答案都攤在畫面上了，還能繼續投。
+  if(pollAnswer(p))return false;
+  const d=p.deadline?Date.parse(p.deadline):NaN;
+  return isNaN(d)||Date.now()<d;
+}
+// 答案：優先用手動填的，否則等單曲建好之後自動取它的 center
+function pollAnswer(p){
+  if(p.answer)return p.answer;
+  const d=(getData(p.group)||[]).find(x=>x.num===p.num);
+  const c=d&&d.center&&d.center.length?d.center:null;
+  return c?c.join('、'):null;
+}
+function pollTally(p){
+  const t=p.tally||{};
+  return Object.keys(t).map(name=>({name,n:t[name]||0}))
+    .filter(x=>x.n>0).sort((a,b)=>b.n-a.n||a.name.localeCompare(b.name,'ja'));
+}
+function openPolls(){return pollData.filter(pollOpen);}
+
+// 建立預測時的候選名單＝該團此刻還在籍的成員
+function pollCandidates(g){
+  const all=getAllMembers(g), now=new Date();
+  return Object.keys(all).filter(n=>activeAt(all[n],now))
+    .sort((a,b)=>a.localeCompare(b,'ja'));
+}
+
+// 匿名身分是投票當下才建立的，純瀏覽的人不會產生帳號
+async function ensureVoter(){
+  if(!firebaseAuth)throw new Error('Firebase Auth 未載入');
+  if(firebaseAuth.currentUser)return firebaseAuth.currentUser;
+  const r=await firebaseAuth.signInAnonymously();
+  return r.user||firebaseAuth.currentUser;
+}
+
+async function castVote(pid,pick,nick){
+  const p=pollData.find(x=>x.id===pid);
+  if(!p)throw new Error('找不到這個預測');
+  if(!pollOpen(p))throw new Error('這個預測已經截止了');
+  if(!(p.candidates||[]).includes(pick))throw new Error('不在候選名單內');
+  const user=await ensureVoter();
+  const vid=voteId(pid,user.uid);
+  const n=setMyNick(nick);
+  const batch=db.batch();
+  batch.set(db.collection(VOTE_COL).doc(vid),
+    {pollId:pid,uid:user.uid,pick,nick:n,at:Date.now()});
+  // 同一批次裡累加票數：票寫進去了但總數沒加到的情況不會發生
+  const inc=firebase.firestore.FieldValue.increment(1);
+  batch.update(db.collection(POLL_COL).doc(pid),
+    new firebase.firestore.FieldPath('tally',pick),inc,
+    new firebase.firestore.FieldPath('voteCount'),inc);
+  await batch.commit();
+  myVotes[pid]={pick,nick:n};
+  try{localStorage.setItem('sakamichi-votes',JSON.stringify(myVotes));}catch(e){}
+}
+
+function loadMyVotes(){
+  try{myVotes=JSON.parse(localStorage.getItem('sakamichi-votes')||'{}')||{};}
+  catch(e){myVotes={};}
+}
+function myVoteOn(pid){return myVotes[pid]||null;}
+
+// ── 畫面 ──
+function updatePollBadge(){
+  const b=document.getElementById('poll-btn'); if(!b)return;
+  const n=openPolls().length;
+  b.textContent=n?('🎯 預測 '+n):'🎯 預測';
+  b.classList.toggle('has-poll',n>0);
+}
+function openPollModal(){
+  const nick=document.getElementById('poll-nick');
+  if(nick)nick.value=myNick();
+  document.getElementById('poll-msg').style.display='none';
+  buildPollList();
+  openModal('pollModal');
+}
+function pollBar(name,n,total,isAnswer,isMine){
+  const row=elWith('div','pv-row');
+  const pct=total?Math.round(n/total*100):0;
+  row.append(
+    elWith('div','pv-name'+(isAnswer?' is-ans':'')+(isMine?' is-mine':''),
+           (isAnswer?'🎯 ':'')+(isMine?'★ ':'')+name),
+    (()=>{const t=elWith('div','pv-track');
+          t.appendChild(elWith('div','pv-fill'+(isAnswer?' is-ans':''),'',
+                               'width:'+pct+'%'));
+          return t;})(),
+    elWith('div','pv-n',n+' 票'));
+  return row;
+}
+function buildPollList(){
+  const host=document.getElementById('poll-list'); if(!host)return;
+  host.innerHTML='';
+  if(!pollReady){host.appendChild(elWith('div','poll-empty','載入中…'));return;}
+  if(!pollData.length){
+    host.appendChild(elWith('div','poll-empty',
+      canEdit()?'還沒有任何預測。按下面的「＋ 開一個新預測」建立。'
+               :'目前沒有進行中的預測，下一張單曲公布時再來看看。'));
+    return;
+  }
+  pollData.forEach(p=>host.appendChild(buildPollCard(p)));
+}
+function buildPollCard(p){
+  const box=elWith('div','poll-card');
+  const open=pollOpen(p), ans=pollAnswer(p), mine=myVoteOn(p.id);
+  const head=elWith('div','poll-head');
+  head.append(elWith('span','badge badge-'+p.group,'第'+p.num+'張'),
+              elWith('span','poll-title',p.title||'（曲名未定）'));
+  head.appendChild(elWith('span','poll-state'+(open?' is-open':''),
+    ans?'已開獎':(open?'投票中':'已截止')));
+  box.appendChild(head);
+
+  const meta=[];
+  if(p.date)meta.push('預計 '+p.date);
+  if(p.deadline&&open)meta.push('截止 '+p.deadline.replace('T',' ').slice(0,16));
+  meta.push((p.voteCount||0)+' 人投過');
+  box.appendChild(elWith('div','poll-meta',meta.join('　·　')));
+
+  if(ans){
+    box.appendChild(elWith('div','poll-ans','🎯 答案：'+ans+
+      (mine?(ans.split('、').includes(mine.pick)?'　你猜中了！':'　你猜的是 '+mine.pick):'')));
+  }
+
+  // 投過、已截止或已開獎才看得到票數
+  if(mine||!open||ans){
+    const t=pollTally(p), total=p.voteCount||0;
+    if(!t.length)box.appendChild(elWith('div','poll-empty','還沒有人投票。'));
+    else{
+      const wrap=elWith('div','pv');
+      t.forEach(x=>wrap.appendChild(pollBar(x.name,x.n,total,
+        !!ans&&ans.split('、').includes(x.name), !!mine&&mine.pick===x.name)));
+      box.appendChild(wrap);
+    }
+    if(mine&&open)box.appendChild(elWith('div','poll-note',
+      '你投了「'+mine.pick+'」。每人一票，投出後不能更改。'));
+  } else {
+    box.appendChild(buildVotePicker(p));
+  }
+
+  if(canEdit()){
+    const bar=elWith('div','poll-admin');
+    const cl=document.createElement('button');
+    cl.className='pg-btn'; cl.textContent=p.closed?'↩ 重新開放':'⏹ 提前截止';
+    cl.onclick=()=>togglePollClosed(p.id,!p.closed);
+    const del=document.createElement('button');
+    del.className='pg-btn danger'; del.textContent='🗑 刪除';
+    del.onclick=()=>deletePoll(p.id,p);
+    bar.append(cl,del);
+    box.appendChild(bar);
+  }
+  return box;
+}
+function buildVotePicker(p){
+  const wrap=elWith('div','poll-pick');
+  const sel=document.createElement('select');
+  sel.className='pk-name'; sel.id='pv-sel-'+p.id;
+  sel.appendChild(new Option('選擇你覺得會是 C 的成員…',''));
+  (p.candidates||[]).forEach(n=>sel.appendChild(new Option(n,n)));
+  const btn=document.createElement('button');
+  btn.className='btn-save'; btn.textContent='🎯 送出預測'; btn.disabled=true;
+  sel.addEventListener('change',()=>{btn.disabled=!sel.value;});
+  btn.addEventListener('click',async()=>{
+    btn.disabled=true; btn.textContent='送出中…';
+    try{
+      await castVote(p.id,sel.value,document.getElementById('poll-nick').value);
+      showMsg('poll-msg','ok','✓ 預測送出了！現在看得到目前票數。',true);
+      buildPollList();
+    }catch(e){
+      btn.disabled=false; btn.textContent='🎯 送出預測';
+      showMsg('poll-msg','err','送出失敗：'+(e&&e.message||e),false);
+    }
+  });
+  wrap.append(sel,btn);
+  return wrap;
+}
+
+// ── 管理：建立／截止／刪除 ──
+function openNewPoll(){
+  if(!canEdit())return;
+  const g=currentHash();
+  const list=getData(g).slice().sort((a,b)=>b.num-a.num);
+  const next=(list[0]?list[0].num:0)+1;
+  const num=prompt('要為哪一張單曲開預測？（輸入編號）',String(next));
+  if(num===null)return;
+  const n=parseInt(num,10);
+  if(!n||n<1){showMsg('poll-msg','err','編號看不懂。',false);return;}
+  if(pollData.some(x=>x.group===g&&x.num===n)){
+    showMsg('poll-msg','err','第'+n+'張已經有預測了。',false);return;}
+  const title=prompt('曲名（還沒公布可以留空）','')||'';
+  const deadline=prompt('投票截止時間（YYYY-MM-DD，留空就不自動截止）','')||'';
+  const cands=pollCandidates(g);
+  if(!cands.length){showMsg('poll-msg','err','這個團沒有在籍成員可以當候選。',false);return;}
+  db.collection(POLL_COL).doc(pollId(g,n)).set({
+    group:g,num:n,title:cleanNick(title).slice(0,60),
+    deadline:deadline?deadline+'T23:59':'',
+    candidates:cands,tally:{},voteCount:0,answer:'',closed:false,
+    createdAt:Date.now()
+  }).then(()=>showMsg('poll-msg','ok','✓ 開好了，候選 '+cands.length+' 人。',true))
+    .catch(e=>showMsg('poll-msg','err','建立失敗：'+e.message,false));
+}
+function togglePollClosed(id,closed){
+  if(!canEdit())return;
+  db.collection(POLL_COL).doc(id).update({closed:!!closed})
+    .then(()=>buildPollList())
+    .catch(e=>showMsg('poll-msg','err','改不動：'+e.message,false));
+}
+let pollDelStep='';
+function deletePoll(id,p){
+  if(!canEdit())return;
+  if(pollDelStep!==id){
+    pollDelStep=id;
+    showMsg('poll-msg','err','再按一次「🗑 刪除」就會刪掉第'+p.num+'張的預測（連同 '+
+            (p.voteCount||0)+' 張票）。',false);
+    setTimeout(()=>{if(pollDelStep===id)pollDelStep='';},4000);
+    return;
+  }
+  pollDelStep='';
+  db.collection(POLL_COL).doc(id).delete()
+    .then(()=>{showMsg('poll-msg','ok','已刪除。',true);buildPollList();})
+    .catch(e=>showMsg('poll-msg','err','刪除失敗：'+e.message,false));
 }
 
 try{
@@ -1833,6 +2135,16 @@ function migrateMemberOverrides(){
     .catch(e=>console.warn('成員資料搬移失敗',e));
 }
 if(db){
+  loadMyVotes();
+  db.collection(POLL_COL).onSnapshot(snap=>{
+    pollData=[];
+    snap.forEach(d=>pollData.push({id:d.id,...d.data()}));
+    pollData.sort((a,b)=>(b.num-a.num)||String(a.group).localeCompare(b.group));
+    pollReady=true;
+    updatePollBadge();
+    if(document.getElementById('pollModal').classList.contains('open'))buildPollList();
+  },err=>{console.warn('polls',err);pollReady=true;updatePollBadge();});
+
   db.collection(MEM_COL).onSnapshot(snap=>{
     const next={};
     snap.forEach(d=>{
@@ -3749,6 +4061,8 @@ function switchManageTab(tab){
 // ── 備份 / 還原 ──
 const BACKUP_VERSION=1;
 const ALL_GROUPS=['nogi','hinata','sakura','keyaki','aoba'];
+
+
 function collectBackup(){
   const singles={},members={};
   ALL_GROUPS.forEach(g=>{
