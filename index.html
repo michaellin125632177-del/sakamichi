@@ -790,7 +790,8 @@ body.is-guest .edit-only{display:none!important;}
     <div class="modal-sub">猜猜看誰會是 center。投完才看得到目前票數。</div>
     <div class="mr" style="margin-top:12px;">
       <label for="poll-nick">你的暱稱（會跟著你的預測顯示，隨時可改）</label>
-      <input type="text" id="poll-nick" maxlength="16" placeholder="例：坂道老司機">
+      <input type="text" id="poll-nick" maxlength="16" placeholder="例：坂道老司機"
+             oninput="setMyNick(this.value)">
     </div>
     <div id="poll-list"></div>
     <div id="poll-msg" class="mmsg"></div>
@@ -1486,6 +1487,8 @@ function cleanNick(v){
   return String(v||'').replace(/[\u0000-\u001f\u007f]/g,'').trim().slice(0,NICK_MAX);
 }
 function myNick(){return cleanNick(localStorage.getItem(NICK_KEY)||'');}
+// 邊打邊存：改了暱稱卻沒投票的話，原本那次修改會白做。
+// 存的是這台裝置的 localStorage，不會上傳，也不需要任何個資。
 function setMyNick(v){
   const n=cleanNick(v);
   try{ n?localStorage.setItem(NICK_KEY,n):localStorage.removeItem(NICK_KEY); }catch(e){}
