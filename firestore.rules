@@ -26,10 +26,16 @@ service cloud.firestore {
     // 代價是訪客得有權限改這筆文件，所以下面把「能改什麼」鎖到只剩投票這件事。
     match /polls/{pid} {
 
-      // 這次 update 只碰了 tally 與 voteCount，其他欄位一個都沒動
+      // 這次 update 只碰了 tally、voteCount 與 pool，其他欄位一個都沒動
       function onlyTally() {
         return request.resource.data.diff(resource.data)
-               .affectedKeys().hasOnly(['tally', 'voteCount']);
+               .affectedKeys().hasOnly(['tally', 'voteCount', 'pool']);
+      }
+      // 彩池只能加上這個人這次押的金額
+      function poolMatches(pid) {
+        let b = getAfter(/databases/$(database)/documents/bets/$(pid + '_' + request.auth.uid)).data;
+        return request.resource.data.get('pool', 0)
+               == resource.data.get('pool', 0) + b.stake;
       }
 
       // 總票數剛好 +1，而且 tally 裡只有一個人的數字變動
@@ -43,7 +49,7 @@ service cloud.firestore {
       // 用 getAfter 而不是 get：票與加票是同一個 batch，get 看到的是批次「之前」
       // 的狀態，那時候票還不存在。
       function matchesMyVote() {
-        let v = getAfter(/databases/$(database)/documents/votes/$(pid + '_' + request.auth.uid)).data;
+        let v = getAfter(/databases/$(database)/documents/bets/$(pid + '_' + request.auth.uid)).data;
         return request.resource.data.tally.diff(resource.data.tally)
                  .affectedKeys().hasOnly([v.pick])
             && request.resource.data.tally[v.pick]
@@ -57,7 +63,8 @@ service cloud.firestore {
             && resource.data.get('answer', '') == ''
             && onlyTally()
             && bumpedOne()
-            && matchesMyVote();
+            && matchesMyVote()
+            && poolMatches(pid);
       }
 
       allow read: if true;
@@ -65,8 +72,80 @@ service cloud.firestore {
       allow update: if isOwner() || isVoteBump();
     }
 
+    // ── 錢包與下注 ──
+    // 下注是一個批次：寫注單、扣自己的餘額、加彩池與票數。餘額是由瀏覽器
+    // 寫進去的，所以規則必須自己驗算術，否則開個 Console 就能改成一億。
+    //
+    // 綁定的方式：扣款時錢包會同時寫下 lastBet（這次押的是哪個預測），
+    // 規則就能找到對應的注單、比對金額；注單那邊反過來確認錢包的 lastBet
+    // 指向自己。兩邊互相指，少一邊就過不了。
+    match /wallets/{uid} {
+      // 自己的看得到就好；站長要結算發錢，所以全部讀得到
+      allow read: if isOwner() || (request.auth != null && request.auth.uid == uid);
+      // 站長負責結算發錢
+      allow write: if isOwner();
+      // 新帳號只能開自己的，起始籌碼固定
+      allow create: if request.auth != null
+        && request.auth.uid == uid
+        && request.resource.data.keys().hasOnly(['name', 'balance', 'createdAt'])
+        && request.resource.data.balance == 1000
+        && request.resource.data.name is string
+        && request.resource.data.name.size() <= 16;
+      // 本人只能做一件事：扣掉剛剛那張注單的金額
+      allow update: if request.auth != null
+        && request.auth.uid == uid
+        && isBetDeduction(uid);
+    }
+
+    function isBetDeduction(uid) {
+      let d = request.resource.data;
+      let old = resource.data;
+      let bid = d.lastBet + '_' + uid;
+      return d.diff(old).affectedKeys().hasOnly(['balance', 'lastBet'])
+          && d.lastBet is string
+          && d.balance is int
+          && d.balance >= 0
+          && d.balance < old.balance
+          && existsAfter(/databases/$(database)/documents/bets/$(bid))
+          && old.balance - d.balance
+             == getAfter(/databases/$(database)/documents/bets/$(bid)).data.stake;
+    }
+
+    match /bets/{bid} {
+      // 注單帶著玩家取的名字，不讓任何人整包撈走；站長要結算所以讀得到
+      allow read: if isOwner()
+                  || (request.auth != null && resource.data.uid == request.auth.uid);
+      allow update, delete: if isOwner();
+      allow create: if validBet(bid);
+    }
+
+    function validBet(bid) {
+      let d = request.resource.data;
+      return request.auth != null
+        && bid == d.pollId + '_' + request.auth.uid
+        && d.uid == request.auth.uid
+        && d.keys().hasOnly(['pollId', 'uid', 'name', 'pick', 'stake', 'at'])
+        && d.keys().hasAll(['pollId', 'uid', 'name', 'pick', 'stake', 'at'])
+        && d.pick is string
+        && d.name is string
+        && d.name.size() <= 16
+        && d.stake is int
+        && d.stake > 0
+        && d.at is number
+        // 錢包那邊必須指回這一注，金額才會被核對到
+        && getAfter(/databases/$(database)/documents/wallets/$(request.auth.uid))
+             .data.lastBet == d.pollId
+        && pollOpenFor(d.pollId)
+        && d.pick in get(/databases/$(database)/documents/polls/$(d.pollId)).data.candidates;
+    }
+    function pollOpenFor(pid) {
+      let p = get(/databases/$(database)/documents/polls/$(pid)).data;
+      return p.get('closed', false) == false && p.get('answer', '') == '';
+    }
+
     // 一人一票：文件 id 固定是 {pollId}_{uid}，所以同一個人只佔得到一格。
     // 只准 create，不准改也不准刪 —— 投出去就算數。
+    // （舊的匿名投票留著，新的下注走 bets。）
     match /votes/{vid} {
 
       function validVote() {

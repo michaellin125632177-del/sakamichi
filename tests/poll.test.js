@@ -22,7 +22,12 @@ const mkPoll=(p,o={})=>p.evaluate(async o=>{
   // ── 候選名單：只列當下在籍的人 ──
   let p=await openPage(b,{auth:{uid:ADMIN_UID,name:'站長'},
                           viewport:{width:900,height:1000},onError:S.onError});
+  const fired=[]; await p.exposeFunction('__pwned',w=>fired.push(w));
+  await p.reload({waitUntil:'domcontentloaded'}); await p.waitForTimeout(1500);
   await seed(p);
+  // 面板改成下注模式之後要先有錢包，否則只會看到「建立錢包」
+  await p.evaluate(async()=>{await ensureWallet('站長');});
+  await p.waitForTimeout(800);
   const C=await p.evaluate(()=>{
     const c=pollCandidates('nogi'), all=getAllMembers('nogi');
     return {n:c.length,
@@ -93,52 +98,34 @@ const mkPoll=(p,o={})=>p.evaluate(async o=>{
   S.chk('下拉不含已畢業成員',
         !(await p.locator('#pv-sel-'+P44).allTextContents())[0].includes('白石麻衣'));
 
-  await p.fill('#poll-nick','坂道老司機');
   await p.selectOption('#pv-sel-'+P44,'賀喜遥香'); await p.waitForTimeout(200);
-  await p.click('.poll-pick .btn-save'); await p.waitForTimeout(1200);
+  await p.fill('#pv-amt-'+P44,'50'); await p.waitForTimeout(200);
+  await p.click('.poll-pick .btn-save'); await p.waitForTimeout(1300);
 
   const V=await p.evaluate(id=>{
     const pl=pollData.find(x=>x.id===id);
-    const v=Object.values(window.__store.votes)[0];
+    const v=Object.values(window.__store.bets)[0];
     return {tally:pl.tally,voteCount:pl.voteCount,vote:v,
-            voteDocId:Object.keys(window.__store.votes)[0],
+            voteDocId:Object.keys(window.__store.bets)[0],
             bars:document.querySelectorAll('.pv-row').length,
             stillPicker:document.querySelectorAll('#pv-sel-'+id).length,
-            nickSaved:localStorage.getItem('sakamichi-nick')};
+            stake:(myVoteOn(id)||{}).stake};
   },P44);
   S.chk('票數累加到 1', V.tally['賀喜遥香']===1&&V.voteCount===1, JSON.stringify(V.tally));
   S.chk('票有寫進去', V.vote&&V.vote.pick==='賀喜遥香', JSON.stringify(V.vote));
-  S.chk('票帶著暱稱', V.vote&&V.vote.nick==='坂道老司機', V.vote&&V.vote.nick);
+  S.chk('注單帶著注額', V.vote&&V.vote.stake===50, V.vote&&V.vote.stake);
   S.chk('票的 id 是 預測_uid（所以一人只佔得到一格）',
         V.voteDocId===P44+'_'+ADMIN_UID, V.voteDocId);
   S.chk('投完看得到票數', V.bars===1, V.bars);
   S.chk('投完就不能再投', V.stillPicker===0, V.stillPicker);
-  S.chk('暱稱記在這台裝置上', V.nickSaved==='坂道老司機', V.nickSaved);
-  // 改了暱稱但沒投票也要記住（原本只有投票成功才存）
-  await p.fill('#poll-nick','改個新名字');
-  await p.waitForTimeout(250);
-  S.chk('邊打邊存，不必投票也記得住',
-        await p.evaluate(()=>localStorage.getItem('sakamichi-nick'))==='改個新名字',
-        await p.evaluate(()=>localStorage.getItem('sakamichi-nick')));
-  S.chk('重新打開面板會帶回來', await p.evaluate(()=>{
-    closeModal('pollModal'); document.getElementById('poll-nick').value='';
-    openPollModal();
-    return document.getElementById('poll-nick').value==='改個新名字';}));
-  await p.fill('#poll-nick','  前後有空白  '); await p.waitForTimeout(250);
-  S.chk('存起來的是清理過的',
-        await p.evaluate(()=>localStorage.getItem('sakamichi-nick'))==='前後有空白',
-        JSON.stringify(await p.evaluate(()=>localStorage.getItem('sakamichi-nick'))));
-  await p.fill('#poll-nick',''); await p.waitForTimeout(250);
-  S.chk('清空欄位就把記錄也清掉',
-        await p.evaluate(()=>localStorage.getItem('sakamichi-nick'))===null);
-  await p.fill('#poll-nick','坂道老司機'); await p.waitForTimeout(250);
+  S.chk('本機記著自己押了多少', V.stake===50, V.stake);
 
   // 第二票投別人，票數要分開累加
   await p.evaluate(async id=>{
     const inc=firebase.firestore.FieldValue.increment(1);
     const batch=db.batch();
-    batch.set(db.collection('votes').doc(id+'_someone'),
-      {pollId:id,uid:'someone',pick:'井上和',nick:'路人',at:Date.now()});
+    batch.set(db.collection('bets').doc(id+'_someone'),
+      {pollId:id,uid:'someone',name:'路人',pick:'井上和',stake:10,at:Date.now()});
     batch.update(db.collection('polls').doc(id),
       new firebase.firestore.FieldPath('tally','井上和'),inc,
       new firebase.firestore.FieldPath('voteCount'),inc);
@@ -252,7 +239,7 @@ const mkPoll=(p,o={})=>p.evaluate(async o=>{
     window.__H41=await mk(41,{'賀喜遥香':11,'池田瑛紗':6,'遠藤さくら':3},20,'B'); // 大家沒中
     window.__H40=await mk(40,{'瀬戸口心月':8,'賀喜遥香':5},13,'C');              // W-center 中其一
     window.__H90=await mk(90,{},0,'進行中');   // 90 沒有對應單曲，不會自動開獎
-    myVotes[window.__H41]={pick:'池田瑛紗',nick:'我'};   // 我在 41 猜中
+    myVotes[window.__H41]={pick:'池田瑛紗',stake:10};   // 我在 41 猜中
   });
   await p.waitForTimeout(1300);
 
@@ -389,7 +376,7 @@ const mkPoll=(p,o={})=>p.evaluate(async o=>{
   await p.waitForTimeout(600);
   const D1=await mkPoll(p,{num:70,title:'第一次'});
   await p.waitForTimeout(800);
-  await p.evaluate(async id=>{await castVote(id,'小川彩','我');},D1);
+  await p.evaluate(async id=>{await placeBet(id,'小川彩',10);},D1);
   await p.waitForTimeout(800);
   S.chk('投完之後本機記著這一票', await p.evaluate(id=>!!myVoteOn(id),D1));
   await p.evaluate(async id=>{await db.collection('polls').doc(id).delete();},D1);
@@ -405,11 +392,12 @@ const mkPoll=(p,o={})=>p.evaluate(async o=>{
   S.chk('畫面沒有誤顯示「你投了」',
         !(await p.locator('#poll-list').textContent()).includes('你投了'));
   S.chk('舊的票不會佔住新預測的票位',
-        await p.evaluate(ids=>!window.__store.votes[ids[1]+'_'+
+        await p.evaluate(ids=>!window.__store.bets[ids[1]+'_'+
           firebaseAuth.currentUser.uid],[D1,D2]));
   // 新預測投得下去
   await p.selectOption('#pv-sel-'+D2,'賀喜遥香'); await p.waitForTimeout(200);
-  await p.click('.poll-pick .btn-save'); await p.waitForTimeout(1200);
+  await p.fill('#pv-amt-'+D2,'20'); await p.waitForTimeout(200);
+  await p.click('.poll-pick .btn-save'); await p.waitForTimeout(1300);
   S.chk('重開之後投得下去',
         await p.evaluate(id=>(pollData.find(x=>x.id===id).tally||{})['賀喜遥香']===1,D2));
 
@@ -417,7 +405,7 @@ const mkPoll=(p,o={})=>p.evaluate(async o=>{
   // 使用者現有的壞掉狀態就是這樣：預測還在、票數是空的，但本機記著投過。
   const H=await mkPoll(p,{num:71,title:'票數是空的'});
   await p.evaluate(id=>{
-    myVotes[id]={pick:'小川彩',nick:'我'};
+    myVotes[id]={pick:'小川彩',stake:10};
     localStorage.setItem('sakamichi-votes',JSON.stringify(myVotes));
   },H);
   S.chk('先造出對不上的狀態', await p.evaluate(id=>!!myVoteOn(id),H));
@@ -427,7 +415,7 @@ const mkPoll=(p,o={})=>p.evaluate(async o=>{
   // 反面：票數對得上就不能亂丟
   const H2=await mkPoll(p,{num:72,title:'真的投過',tally:{'賀喜遥香':3},voteCount:3});
   await p.waitForTimeout(800);
-  await p.evaluate(id=>{myVotes[id]={pick:'賀喜遥香',nick:'我'};},H2);
+  await p.evaluate(id=>{myVotes[id]={pick:'賀喜遥香',stake:10};},H2);
   await p.evaluate(()=>reconcileMyVotes());
   S.chk('票數對得上的記錄要保留', await p.evaluate(id=>!!myVoteOn(id),H2));
 
@@ -449,8 +437,9 @@ const mkPoll=(p,o={})=>p.evaluate(async o=>{
         (await p.locator('.ph-song').first().textContent()));
   await p.close();
 
-  // ── 訪客（沒登入）──
-  p=await openPage(b,{auth:{signedOut:true},viewport:{width:900,height:1000},
+  // ── 沒登入 ──
+  // 面板整個改成下注模式，所以沒帳號連看都看不到（詳細的下注流程在 bet.test.js）
+  p=await openPage(b,{auth:{signedOut:true},viewport:{width:900,height:950},
                       onError:S.onError});
   await p.evaluate(async()=>{
     const batch=db.batch();
@@ -458,47 +447,14 @@ const mkPoll=(p,o={})=>p.evaluate(async o=>{
       getBase(g).forEach(e=>batch.set(db.collection(g).doc(String(e.num)),toDoc({...e}))));
     await batch.commit();
   });
-  const P46=await mkPoll(p,{num:46});
-  // 再開一個會自動開獎的（第42張有單曲資料），歷來區才有東西可以驗
-  await mkPoll(p,{num:42,title:'已開獎',tally:{'一ノ瀬美空':3},voteCount:3});
+  await mkPoll(p,{num:46});
   await p.waitForTimeout(1200);
-  const G=await p.evaluate(()=>({
-    canEdit:canEdit(), guest:document.body.classList.contains('is-guest'),
-    anonCalls:window.__anonCalls||0}));
-  S.chk('訪客仍然不能編輯網站', !G.canEdit&&G.guest);
-  S.chk('純瀏覽不會建立匿名帳號', G.anonCalls===0, G.anonCalls);
-
+  S.chk('沒登入仍然不能編輯網站', await p.evaluate(()=>!canEdit()));
   await p.click('#poll-btn'); await p.waitForTimeout(600);
-  S.chk('訪客看得到預測', (await p.locator('.poll-card').count())>0);
-  S.chk('訪客看不到管理按鈕', (await p.locator('.poll-admin').count())===0);
-  await p.evaluate(()=>{const b=document.querySelector('.ph-box');
-    if(b){b.open=true;document.querySelectorAll('.ph-row').forEach(r=>r.open=true);}});
-  await p.waitForTimeout(300);
-  S.chk('訪客的歷來區有列出已開獎的',
-        (await p.locator('.ph-row').count())>0, await p.locator('.ph-row').count());
-  S.chk('訪客在歷來那邊也看不到管理按鈕',
-        (await p.locator('.ph-row .poll-admin').count())===0);
-  S.chk('訪客的提示不會說可以管理',
-        !/管理/.test(await p.locator('.ph-more').first().textContent()),
-        await p.locator('.ph-more').first().textContent());
-  await p.fill('#poll-nick','路過的');
-  await p.selectOption('#pv-sel-'+P46,'遠藤さくら'); await p.waitForTimeout(200);
-  await p.click('.poll-pick .btn-save'); await p.waitForTimeout(1400);
-  const GV=await p.evaluate(()=>({
-    anonCalls:window.__anonCalls||0,
-    vote:Object.values(window.__store.votes)[0],
-    id:Object.keys(window.__store.votes)[0],
-    tally:pollData.find(x=>x.num===46).tally,
-    bars:document.querySelectorAll('#poll-list>.poll-card .pv-row').length}));
-  S.chk('投票時才建立匿名帳號', GV.anonCalls===1, GV.anonCalls);
-  S.chk('匿名的票寫得進去', GV.vote&&GV.vote.pick==='遠藤さくら', JSON.stringify(GV.vote));
-  S.chk('匿名票的 id 用匿名 uid', /_anon-/.test(GV.id||''), GV.id);
-  S.chk('匿名投票也會累加票數', GV.tally['遠藤さくら']===1, JSON.stringify(GV.tally));
-  S.chk('訪客投完也看得到票數', GV.bars===1, GV.bars);
-  S.chk('匿名身分不會讓登入按鈕以為已登入',
-        (await p.locator('#auth-btn').textContent()).includes('登入'),
-        await p.locator('#auth-btn').textContent());
-  S.chk('匿名身分不會解鎖編輯權', await p.evaluate(()=>!canEdit()));
+  S.chk('沒登入時面板是登入畫面', (await p.locator('#lg-id').count())===1);
+  S.chk('沒登入看不到任何預測卡片',
+        (await p.locator('#poll-list>.poll-card .poll-pick').count())===0);
+  S.chk('沒登入看不到管理按鈕', (await p.locator('.poll-admin').count())===0);
 
   await b.close();
   const r=S.report();

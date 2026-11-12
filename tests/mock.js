@@ -59,10 +59,23 @@
               if(!store[g][id])throw new Error('not-found: '+g+'/'+id);
               const patch=(a.length===1&&!(a[0]&&a[0].__segs))?a[0]:pathsToPatch(a);
               applyPatch(store[g][id],patch);notify(g);return Promise.resolve();},
-            delete(){delete store[g][id];notify(g);return Promise.resolve();}};
+            delete(){delete store[g][id];notify(g);return Promise.resolve();},
+            onSnapshot(cb){
+              const fire=()=>cb({exists:id in store[g],id,
+                data:()=>store[g][id]?clone(store[g][id]):undefined});
+              (subs[g]=subs[g]||[]).push(fire); setTimeout(fire,0);
+              return ()=>{subs[g]=subs[g].filter(f=>f!==fire);};
+            }};
         },
         onSnapshot(cb){ (subs[g]=subs[g]||[]).push(cb); setTimeout(()=>cb(snapOf(g)),0);
-                        return ()=>{subs[g]=subs[g].filter(f=>f!==cb);}; }
+                        return ()=>{subs[g]=subs[g].filter(f=>f!==cb);}; },
+        // 只支援 where(field,'==',value)，夠結算時撈某個預測的注單用
+        where(field,op,val){
+          const ids=Object.keys(store[g]).filter(id=>store[g][id][field]===val);
+          return {get(){return Promise.resolve({
+            forEach(cb){ids.forEach(id=>cb({id,data:()=>clone(store[g][id])}));},
+            size:ids.length,empty:!ids.length});}};
+        }
       };
     }
   };
@@ -80,6 +93,24 @@
       auth.currentUser=signInUser;if(authCb)authCb(signInUser);
       return Promise.resolve({user:signInUser});},
     signInWithRedirect(){return Promise.resolve();},
+    createUserWithEmailAndPassword(email,pw){
+      if(store.__users&&store.__users[email])
+        return Promise.reject({code:'auth/email-already-in-use'});
+      if(String(pw||'').length<6)return Promise.reject({code:'auth/weak-password'});
+      store.__users=store.__users||{};
+      const uid='u-'+Object.keys(store.__users).length+'-'+email.slice(1,7);
+      store.__users[email]={pw,uid};
+      const u={uid,email,isAnonymous:false,displayName:null};
+      auth.currentUser=u; if(authCb)authCb(u);
+      return Promise.resolve({user:u});
+    },
+    signInWithEmailAndPassword(email,pw){
+      const r=store.__users&&store.__users[email];
+      if(!r||r.pw!==pw)return Promise.reject({code:'auth/invalid-credential'});
+      const u={uid:r.uid,email,isAnonymous:false,displayName:null};
+      auth.currentUser=u; if(authCb)authCb(u);
+      return Promise.resolve({user:u});
+    },
     signInAnonymously(){
       window.__anonCalls=(window.__anonCalls||0)+1;
       const u={uid:'anon-'+(cfg.anonUid||'1'),isAnonymous:true,displayName:null,email:null};
