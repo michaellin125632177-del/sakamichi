@@ -208,6 +208,78 @@ const mkPoll=(p,o={})=>p.evaluate(async o=>{
   S.chk('Under 的答案取 under 站位的正中央，不是 center',
         UA2.under==='伊藤理々杏', UA2.under);
 
+  // ── 歷來得票排行 ──
+  // 最重要的一點：進行中又還沒投的預測不能算進去，否則這張表
+  // 等於把當前票數攤開給還沒投的人看，「投完才看得到」就白做了。
+  await p.evaluate(async()=>{
+    for(const id of Object.keys(window.__store.polls))
+      await db.collection('polls').doc(id).delete();
+    await db.collection('polls').doc('nogi_42').set({group:'nogi',num:42,kind:'sel',
+      title:'已開獎A',deadline:'',candidates:['一ノ瀬美空','賀喜遥香','井上和'],
+      tally:{'一ノ瀬美空':12,'賀喜遥香':7,'井上和':4},voteCount:23,
+      answer:'',closed:false,createdAt:1});
+    await db.collection('polls').doc('nogi_41').set({group:'nogi',num:41,kind:'sel',
+      title:'已開獎B',deadline:'',candidates:['池田瑛紗','賀喜遥香','遠藤さくら'],
+      tally:{'池田瑛紗':9,'賀喜遥香':6,'遠藤さくら':3},voteCount:18,
+      answer:'',closed:false,createdAt:2});
+    await db.collection('polls').doc('nogi_60').set({group:'nogi',num:60,kind:'sel',
+      title:'進行中',deadline:'',candidates:pollCandidates('nogi'),
+      tally:{'小川彩':5},voteCount:5,answer:'',closed:false,createdAt:3});
+  });
+  await p.waitForTimeout(1200);
+  const R=await p.evaluate(()=>({
+    visible:visibleTallyPolls().map(x=>x.id).sort(),
+    rank:voteRanking(),
+    open60:pollOpen(pollData.find(x=>x.id==='nogi_60'))}));
+  S.chk('進行中的預測是開著的', R.open60===true);
+  S.chk('只統計看得到票數的預測',
+        JSON.stringify(R.visible)==='["nogi_41","nogi_42"]', R.visible.join(','));
+  S.chk('進行中又沒投的票沒有洩漏出去',
+        !R.rank.some(x=>x.name==='小川彩'), R.rank.map(x=>x.name).join(','));
+  S.chk('跨預測的票加總起來',
+        R.rank[0].name==='賀喜遥香'&&R.rank[0].votes===13,
+        R.rank[0].name+' '+R.rank[0].votes);
+  S.chk('得票最多的不一定中選過', R.rank[0].hits===0, R.rank[0].hits);
+  S.chk('中選次數算得對',
+        R.rank.find(x=>x.name==='一ノ瀬美空').hits===1
+        &&R.rank.find(x=>x.name==='池田瑛紗').hits===1);
+  S.chk('照得票由高到低排',
+        R.rank.every((x,i)=>i===0||x.votes<=R.rank[i-1].votes),
+        R.rank.map(x=>x.votes).join(','));
+
+  await p.evaluate(()=>buildPollList()); await p.waitForTimeout(400);
+  S.chk('排行掛在預測面板裡', (await p.locator('#poll-list .pr-box').count())===1);
+  S.chk('沒有動到原本的排行榜面板',
+        (await p.locator('#rank-panel #rs-vote').count())===0);
+  await p.evaluate(()=>document.querySelector('.pr-box').open=true);
+  await p.waitForTimeout(300);
+  const rows=await p.locator('.pr-row').count();
+  S.chk('列出 5 位成員', rows===5, rows);
+  S.chk('前三名有獎牌',
+        (await p.locator('.pr-row .pr-pos').allTextContents()).slice(0,3).join('')==='🥇🥈🥉');
+  S.chk('說明有講清楚統計範圍',
+        (await p.locator('.pr-box .poll-note').textContent()).includes('還沒投'));
+
+  // 投了那張進行中的之後，它才會被算進來
+  await p.evaluate(async()=>{
+    const inc=firebase.firestore.FieldValue.increment(1);
+    const batch=db.batch();
+    batch.set(db.collection('votes').doc('nogi_60_'+firebaseAuth.currentUser.uid),
+      {pollId:'nogi_60',uid:firebaseAuth.currentUser.uid,pick:'小川彩',
+       nick:'我',at:Date.now()});
+    batch.update(db.collection('polls').doc('nogi_60'),
+      new firebase.firestore.FieldPath('tally','小川彩'),inc,
+      new firebase.firestore.FieldPath('voteCount'),inc);
+    await batch.commit();
+    myVotes['nogi_60']={pick:'小川彩',nick:'我'};
+  });
+  await p.waitForTimeout(900);
+  const R2=await p.evaluate(()=>({
+    visible:visibleTallyPolls().length,
+    ogawa:voteRanking().find(x=>x.name==='小川彩')}));
+  S.chk('自己投過之後，那張預測就算進來了', R2.visible===3, R2.visible);
+  S.chk('自己投的那票也進了排行', R2.ogawa&&R2.ogawa.votes===6, JSON.stringify(R2.ogawa));
+
   // ── 不把暱稱當 HTML ──
   await p.evaluate(async()=>{
     await db.collection('polls').doc('nogi_45').set({
