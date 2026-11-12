@@ -217,78 +217,88 @@ const mkPoll=(p,o={})=>p.evaluate(async o=>{
   S.chk('Under 的答案取 under 站位的正中央，不是 center',
         UA2.under==='伊藤理々杏', UA2.under);
 
-  // ── 歷來得票排行 ──
-  // 最重要的一點：進行中又還沒投的預測不能算進去，否則這張表
-  // 等於把當前票數攤開給還沒投的人看，「投完才看得到」就白做了。
+  // ── 歷來預測結果 ──
   await p.evaluate(async()=>{
     for(const id of Object.keys(window.__store.polls))
       await db.collection('polls').doc(id).delete();
-    await db.collection('polls').doc(pollId('nogi',42,'sel')).set({group:'nogi',num:42,kind:'sel',
-      title:'已開獎A',deadline:'',candidates:['一ノ瀬美空','賀喜遥香','井上和'],
-      tally:{'一ノ瀬美空':12,'賀喜遥香':7,'井上和':4},voteCount:23,
-      answer:'',closed:false,createdAt:1});
-    await db.collection('polls').doc(pollId('nogi',41,'sel')).set({group:'nogi',num:41,kind:'sel',
-      title:'已開獎B',deadline:'',candidates:['池田瑛紗','賀喜遥香','遠藤さくら'],
-      tally:{'池田瑛紗':9,'賀喜遥香':6,'遠藤さくら':3},voteCount:18,
-      answer:'',closed:false,createdAt:2});
-    window.__P60=pollId('nogi',60,'sel');
-    await db.collection('polls').doc(window.__P60).set({group:'nogi',num:60,kind:'sel',
-      title:'進行中',deadline:'',candidates:pollCandidates('nogi'),
-      tally:{'小川彩':5},voteCount:5,answer:'',closed:false,createdAt:3});
+    myVotes={}; localStorage.removeItem('sakamichi-votes');
+    const mk=async(num,tally,count,title)=>{
+      const id=pollId('nogi',num,'sel');
+      await db.collection('polls').doc(id).set({group:'nogi',num,kind:'sel',title,
+        deadline:'',candidates:pollCandidates('nogi'),tally,voteCount:count,
+        answer:'',closed:false,createdAt:num});
+      return id;
+    };
+    // 答案都是從既有單曲的 center 自動對上的
+    window.__H42=await mk(42,{'一ノ瀬美空':12,'賀喜遥香':7,'井上和':4},23,'A'); // 大家中
+    window.__H41=await mk(41,{'賀喜遥香':11,'池田瑛紗':6,'遠藤さくら':3},20,'B'); // 大家沒中
+    window.__H40=await mk(40,{'瀬戸口心月':8,'賀喜遥香':5},13,'C');              // W-center 中其一
+    window.__H90=await mk(90,{},0,'進行中');   // 90 沒有對應單曲，不會自動開獎
+    myVotes[window.__H41]={pick:'池田瑛紗',nick:'我'};   // 我在 41 猜中
   });
-  await p.waitForTimeout(1200);
-  const R=await p.evaluate(()=>({
-    visible:visibleTallyPolls().map(x=>x.num).sort(),
-    rank:voteRanking(),
-    open60:pollOpen(pollData.find(x=>x.id===window.__P60))}));
-  S.chk('進行中的預測是開著的', R.open60===true);
-  S.chk('只統計看得到票數的預測',
-        JSON.stringify(R.visible)==='[41,42]', R.visible.join(','));
-  S.chk('進行中又沒投的票沒有洩漏出去',
-        !R.rank.some(x=>x.name==='小川彩'), R.rank.map(x=>x.name).join(','));
-  S.chk('跨預測的票加總起來',
-        R.rank[0].name==='賀喜遥香'&&R.rank[0].votes===13,
-        R.rank[0].name+' '+R.rank[0].votes);
-  S.chk('得票最多的不一定中選過', R.rank[0].hits===0, R.rank[0].hits);
-  S.chk('中選次數算得對',
-        R.rank.find(x=>x.name==='一ノ瀬美空').hits===1
-        &&R.rank.find(x=>x.name==='池田瑛紗').hits===1);
-  S.chk('照得票由高到低排',
-        R.rank.every((x,i)=>i===0||x.votes<=R.rank[i-1].votes),
-        R.rank.map(x=>x.votes).join(','));
+  await p.waitForTimeout(1300);
+
+  const HS=await p.evaluate(()=>({
+    hist:pollHistory().map(x=>x.num),
+    stat:historyStats(),
+    c42:crowdPick(pollData.find(x=>x.id===window.__H42)),
+    c41:crowdPick(pollData.find(x=>x.id===window.__H41)),
+    a40:pollAnswer(pollData.find(x=>x.id===window.__H40)),
+    tie:crowdPick({tally:{'甲':5,'乙':5,'丙':2},voteCount:12}),
+    none:crowdPick({tally:{},voteCount:0})
+  }));
+  S.chk('歷來只收已開獎／已截止的',
+        JSON.stringify(HS.hist)==='[42,41,40]', HS.hist.join(','));
+  S.chk('進行中的不列進歷來', !HS.hist.includes(90), HS.hist.join(','));
+  S.chk('群眾最看好的是得票第一',
+        HS.c42.names[0]==='一ノ瀬美空'&&HS.c42.n===12, JSON.stringify(HS.c42));
+  S.chk('算得出得票率', HS.c42.pct===52, HS.c42.pct);
+  S.chk('同票的都算進群眾首選',
+        HS.tie.names.length===2&&HS.tie.names.includes('甲')&&HS.tie.names.includes('乙'),
+        JSON.stringify(HS.tie));
+  S.chk('沒人投票時沒有群眾首選', HS.none===null);
+  S.chk('開獎 3 次', HS.stat.done===3, HS.stat.done);
+  S.chk('大家猜中 2 次（41 那次最高票不是答案）',
+        HS.stat.crowdHit===2, HS.stat.crowdHit);
+  S.chk('W-center 只要中其一就算中', HS.a40.includes('、')&&HS.stat.crowdHit===2, HS.a40);
+  S.chk('自己的戰績分開算', HS.stat.mine===1&&HS.stat.myHit===1,
+        HS.stat.myHit+'/'+HS.stat.mine);
+
+  const HB=await p.evaluate(()=>({
+    hit:hitBy('甲、乙',['乙']), miss:hitBy('甲、乙',['丙']),
+    noAns:hitBy(null,['甲']), noPick:hitBy('甲',[])}));
+  S.chk('命中判定：答案含其中一個就算中', HB.hit===true);
+  S.chk('命中判定：都不在就是沒中', HB.miss===false);
+  S.chk('命中判定：沒答案不算中', HB.noAns===false);
+  S.chk('命中判定：沒投不算中', HB.noPick===false);
 
   await p.evaluate(()=>buildPollList()); await p.waitForTimeout(400);
-  S.chk('排行掛在預測面板裡', (await p.locator('#poll-list .pr-box').count())===1);
-  S.chk('沒有動到原本的排行榜面板',
-        (await p.locator('#rank-panel #rs-vote').count())===0);
-  await p.evaluate(()=>document.querySelector('.pr-box').open=true);
+  S.chk('歷來面板掛在預測面板裡', (await p.locator('#poll-list .ph-box').count())===1);
+  S.chk('上面只留進行中的卡片',
+        (await p.locator('#poll-list>.poll-card').count())===1,
+        await p.locator('#poll-list>.poll-card').count());
+  S.chk('已開獎的不會在上面重複出現一次',
+        !(await p.locator('#poll-list>.poll-card').textContent()).includes('已開獎'));
+  await p.evaluate(()=>document.querySelector('.ph-box').open=true);
   await p.waitForTimeout(300);
-  const rows=await p.locator('.pr-row').count();
-  S.chk('列出 5 位成員', rows===5, rows);
-  S.chk('前三名有獎牌',
-        (await p.locator('.pr-row .pr-pos').allTextContents()).slice(0,3).join('')==='🥇🥈🥉');
-  S.chk('說明有講清楚統計範圍',
-        (await p.locator('.pr-box .poll-note').textContent()).includes('還沒投'));
+  S.chk('歷來列出 3 筆', (await p.locator('.ph-row').count())===3,
+        await p.locator('.ph-row').count());
+  const stat=await p.locator('.ph-stat').textContent();
+  S.chk('統計列有命中率', stat.includes('67%'), stat);
+  S.chk('統計列有自己的戰績', stat.includes('1 / 1'), stat);
+  const marks=await p.locator('.ph-mark').allTextContents();
+  S.chk('命中與落空分開標示',
+        marks.filter(t=>t.includes('命中')).length===2
+        &&marks.filter(t=>t.includes('落空')).length===1, marks.join(' '));
+  S.chk('有投過的那筆標出自己投誰',
+        (await p.locator('.ph-mine').count())===1);
+  await p.evaluate(()=>document.querySelectorAll('.ph-row').forEach(r=>r.open=true));
+  await p.waitForTimeout(300);
+  S.chk('展開看得到完整票數', (await p.locator('.ph-row .pv-row').count())>0,
+        await p.locator('.ph-row .pv-row').count());
 
-  // 投了那張進行中的之後，它才會被算進來
-  await p.evaluate(async()=>{
-    const inc=firebase.firestore.FieldValue.increment(1);
-    const batch=db.batch();
-    batch.set(db.collection('votes').doc(window.__P60+'_'+firebaseAuth.currentUser.uid),
-      {pollId:window.__P60,uid:firebaseAuth.currentUser.uid,pick:'小川彩',
-       nick:'我',at:Date.now()});
-    batch.update(db.collection('polls').doc(window.__P60),
-      new firebase.firestore.FieldPath('tally','小川彩'),inc,
-      new firebase.firestore.FieldPath('voteCount'),inc);
-    await batch.commit();
-    myVotes[window.__P60]={pick:'小川彩',nick:'我'};
-  });
-  await p.waitForTimeout(900);
-  const R2=await p.evaluate(()=>({
-    visible:visibleTallyPolls().length,
-    ogawa:voteRanking().find(x=>x.name==='小川彩')}));
-  S.chk('自己投過之後，那張預測就算進來了', R2.visible===3, R2.visible);
-  S.chk('自己投的那票也進了排行', R2.ogawa&&R2.ogawa.votes===6, JSON.stringify(R2.ogawa));
+  S.chk('舊的得票排行已經移除', await p.evaluate(()=>
+    typeof voteRanking==='undefined'&&!document.querySelector('.pr-box')));
 
   // ── 刪掉再重開同一個預測（回歸）──
   // 舊版的文件 id 固定是 {團}_{編號}，刪掉重開會沿用同一個 id，於是
@@ -353,10 +363,13 @@ const mkPoll=(p,o={})=>p.evaluate(async o=>{
   });
   await p.waitForTimeout(900);
   await p.evaluate(()=>buildPollList()); await p.waitForTimeout(400);
+  await p.evaluate(()=>{document.querySelector('.ph-box').open=true;});
+  await p.waitForTimeout(300);
   S.chk('曲名當純文字顯示，沒有變成 img',
         (await p.locator('#poll-list img').count())===0);
-  S.chk('注入字串看得到原文',
-        (await p.locator('#poll-list').textContent()).includes('<img'));
+  S.chk('注入字串看得到原文（歷來區也一樣）',
+        (await p.locator('#poll-list').textContent()).includes('<img'),
+        (await p.locator('.ph-song').first().textContent()));
   await p.close();
 
   // ── 訪客（沒登入）──
