@@ -559,6 +559,38 @@ body.is-guest .edit-only{display:none!important;}
   outline:none;margin-bottom:8px;}
 .poll-card>input:focus{border-color:#a855f7;}
 .lg-row{display:flex;gap:7px;margin-top:3px;}
+/* 面板分頁與測驗 */
+.pt-tabs{display:flex;gap:7px;margin-bottom:11px;}
+.pt-tab{flex:1;padding:8px 6px;border-radius:8px;cursor:pointer;font-size:.82rem;
+  border:1px solid #4a2d7a;background:transparent;color:#7c5cb0;}
+.pt-tab.active{border-color:#a855f7;background:rgba(168,85,247,.18);
+  color:#e9d5ff;font-weight:700;}
+.qz-q{padding:10px 0;border-top:1px solid rgba(255,255,255,.05);}
+.qz-text{font-size:.86rem;color:#e9d5ff;margin-bottom:8px;line-height:1.5;}
+.qz-opts{display:grid;grid-template-columns:1fr 1fr;gap:6px;}
+.qz-opt{padding:9px 10px;border-radius:8px;cursor:pointer;font-size:.82rem;
+  border:1px solid #4a2d7a;background:rgba(255,255,255,.03);color:#d8c7f5;
+  text-align:left;transition:all .15s;}
+.qz-opt:hover:not(:disabled){border-color:#a855f7;background:rgba(168,85,247,.12);}
+.qz-opt:disabled{cursor:default;opacity:.75;}
+.qz-opt.is-right{border-color:#22c55e;background:rgba(34,197,94,.16);
+  color:#86efac;font-weight:700;opacity:1;}
+.qz-opt.is-wrong{border-color:#ef4444;background:rgba(239,68,68,.14);color:#fca5a5;opacity:1;}
+.qz-score{font-size:1rem;font-weight:800;color:#fcd34d;margin-bottom:6px;}
+.qz-done{font-size:.76rem;color:#7c5cb0;margin-bottom:9px;}
+@media(max-width:720px){.qz-opts{grid-template-columns:1fr;}
+  .qz-opt{min-height:40px;font-size:.86rem;}
+  .pt-tab{min-height:40px;}}
+
+/* 開盤台 */
+.np-box{border-color:#f59e0b;}
+.np-row{display:flex;align-items:center;gap:9px;margin-bottom:7px;}
+.np-lbl{width:4.6em;flex-shrink:0;color:#9370c0;font-size:.78rem;}
+.np-row select,.np-row input{flex:1;min-width:0;background:#0e0818;
+  border:1px solid #4a2d7a;border-radius:8px;color:#f0e6ff;padding:8px 10px;
+  font-size:.84rem;outline:none;margin:0;}
+.np-prev{font-size:.74rem;color:#7c5cb0;margin:8px 0 2px;line-height:1.5;}
+.np-prev-h{color:#c084fc;}
 .pg-btn.settle{border-color:#f59e0b;color:#fcd34d;}
 .ph-pool{color:#fcd34d;font-size:.72rem;}
 .poll-pick select{flex:1;min-width:150px;background:#0e0818;border:1px solid #4a2d7a;
@@ -1556,6 +1588,131 @@ function renderPollIfOpen(){
 function coin(n){return (n||0).toLocaleString('en-US')+' '+COIN;}
 
 // ══════════════════════════════════════════
+// 冷知識測驗
+// ══════════════════════════════════════════
+// 下注機會一年只有十幾次，光靠賭盤會有很長的空窗。題目全部從站上既有的
+// 資料生成，隨時可以玩，而且答不出來的人自然會去翻資料庫——正好是我們
+// 想要的流量。
+//
+// ※ 分數是在瀏覽器算的，規則沒辦法驗證「你真的答對幾題」。所以規則能
+//   保證的只有「一天最多領 QUIZ_MAX」，擋不住有人直接宣稱滿分。
+//   這是這個設計的已知上限，不是疏漏。
+const QUIZ_N=10, QUIZ_PER=10, QUIZ_MAX=QUIZ_N*QUIZ_PER;
+let quizState=null;
+
+function today(){
+  const d=new Date();
+  return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+
+         '-'+String(d.getDate()).padStart(2,'0');
+}
+function quizDoneToday(){return !!(myWallet&&myWallet.quizDay===today());}
+
+function pick(arr){return arr[Math.floor(Math.random()*arr.length)];}
+function shuffle(a){
+  const x=a.slice();
+  for(let i=x.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));
+    [x[i],x[j]]=[x[j],x[i]];}
+  return x;
+}
+// 從候選池挑 3 個干擾選項，不能跟正解重複
+function distract(pool,answer,n){
+  const out=[];
+  const left=pool.filter(v=>v!==answer);
+  while(out.length<n&&left.length){
+    const i=Math.floor(Math.random()*left.length);
+    out.push(left.splice(i,1)[0]);
+  }
+  return out;
+}
+function mkQ(q,answer,pool){
+  const wrong=distract(pool,answer,3);
+  if(wrong.length<3)return null;
+  return {q,answer,options:shuffle([answer,...wrong])};
+}
+// 題型全部從現成資料推導，不另外維護題庫
+const QUIZ_MAKERS=[
+  // 這張單曲的 center 是誰
+  g=>{const d=pick(getData(g).filter(x=>(x.center||[]).length===1));
+    if(!d)return null;
+    return mkQ((GROUP_NAME[g]||g)+' 第'+d.num+'張《'+d.title+'》的 center 是誰？',
+      d.center[0], Object.keys(getAllMembers(g)));},
+  // 這張單曲是第幾張
+  g=>{const d=pick(getData(g)); if(!d)return null;
+    return mkQ('《'+d.title+'》是 '+(GROUP_NAME[g]||g)+' 的第幾張單曲？',
+      '第'+d.num+'張', getData(g).map(x=>'第'+x.num+'張'));},
+  // 期別
+  g=>{const all=getAllMembers(g);
+    const names=Object.keys(all).filter(n=>all[n].gen);
+    const n=pick(names); if(!n)return null;
+    const gens=[...new Set(names.map(x=>genLabel(all[x].gen)))];
+    return mkQ(n+' 是 '+(GROUP_NAME[g]||g)+' 的第幾期？',
+      genLabel(all[n].gen), gens);},
+  // 選拔人數
+  g=>{const d=pick(getData(g).filter(x=>selCountOf(x)>0)); if(!d)return null;
+    const pool=[...new Set(getData(g).map(selCountOf).filter(Boolean))]
+      .map(v=>v+'名');
+    return mkQ((GROUP_NAME[g]||g)+' 第'+d.num+'張《'+d.title+'》的選拔是幾人？',
+      selCountOf(d)+'名', pool);},
+  // 誰在籍比較久（已畢業的，數字固定）
+  g=>{const t=tenureMap();
+    const all=getAllMembers(g);
+    const names=Object.keys(all).filter(n=>t[n]&&!t[n].active);
+    if(names.length<4)return null;
+    const four=shuffle(names).slice(0,4);
+    const top=four.reduce((a,b)=>t[b].days>t[a].days?b:a);
+    return {q:'下面四位在 '+(GROUP_NAME[g]||g)+' 系列待得最久的是誰？',
+      answer:top,options:shuffle(four)};},
+  // Under 曲的 center
+  g=>{const list=getData(g).filter(x=>{
+      const r=underRowsOf(g,x); return r&&centerOfRows(r).length===1;});
+    const d=pick(list); if(!d)return null;
+    return mkQ((GROUP_NAME[g]||g)+' 第'+d.num+'張的 '+underLabel(g)+
+      ' 曲 center 是誰？', centerOfRows(underRowsOf(g,d))[0],
+      Object.keys(getAllMembers(g)));},
+  // 中文譯名
+  g=>{const d=pick(getData(g).filter(x=>x.zh&&x.zh!==x.title)); if(!d)return null;
+    return mkQ('《'+d.title+'》的中文譯名是？', d.zh,
+      getData(g).map(x=>x.zh).filter(Boolean));}
+];
+function buildQuiz(){
+  const groups=ALL_GROUPS.filter(g=>getData(g).length>=6);
+  const qs=[], seen=new Set();
+  let guard=0;
+  while(qs.length<QUIZ_N&&guard++<300){
+    const g=pick(groups); if(!g)break;
+    const q=pick(QUIZ_MAKERS)(g);
+    if(!q||seen.has(q.q))continue;
+    seen.add(q.q); qs.push(q);
+  }
+  return qs;
+}
+function startQuiz(){
+  quizState={qs:buildQuiz(),answers:{},done:false,score:0};
+  buildPollList();
+}
+function answerQuiz(i,v){
+  if(!quizState||quizState.done)return;
+  if(quizState.answers[i]!==undefined)return;   // 一題只能答一次
+  quizState.answers[i]=v;
+  if(Object.keys(quizState.answers).length===quizState.qs.length)finishQuiz();
+  else buildPollList();
+}
+function finishQuiz(){
+  if(!quizState||quizState.done)return;
+  quizState.score=quizState.qs.reduce((a,q,i)=>
+    a+(quizState.answers[i]===q.answer?1:0),0);
+  quizState.done=true;
+  const gain=quizState.score*QUIZ_PER;
+  if(gain>0&&!quizDoneToday()){
+    db.collection(WALLET_COL).doc(authUser.uid).update({
+      balance:firebase.firestore.FieldValue.increment(gain),
+      quizDay:today(),quizGain:gain
+    }).catch(e=>showMsg('poll-msg','err','領獎失敗：'+e.message,false));
+  }
+  buildPollList();
+}
+
+// ══════════════════════════════════════════
 // 單曲 C 位預測
 // ══════════════════════════════════════════
 // 設計上最重要的一點：票數是用 FieldValue.increment 直接累加在 poll 文件裡，
@@ -1570,43 +1727,97 @@ let pollData=[], pollReady=false, myVotes={};   // pollId -> {pick,nick}
 const GROUP_NAME={nogi:'乃木坂46',hinata:'日向坂46',sakura:'櫻坂46',
                   keyaki:'欅坂46',aoba:'青葉坂46'};
 // 舊的預測沒有 kind 欄位，一律當成表題曲；id 也維持原本的格式，不會對不上
-function pollKind(p){return p&&p.kind==='under'?'under':'sel';}
-// 邏輯上的唯一鍵：一個團的一張單曲，表題與 Under 各只能有一個預測
-function pollKey(g,num,kind){return g+'_'+num+'_'+(kind==='under'?'under':'sel');}
-function pollKeyOf(p){return pollKey(p.group,p.num,pollKind(p));}
-// 文件 id 另外帶一段建立時間。刪掉再開一個同編號的預測時，id 會不一樣——
-// 這很重要，因為「我投過了」是記在瀏覽器裡、用 id 當鍵的，而票的文件 id
-// 也是 {預測id}_{uid}。id 若重複使用，新預測會繼承舊預測的狀態：
-// 畫面上顯示你投過了（其實沒有），伺服器那邊舊的票也還佔著位子擋住新的票。
-function pollId(g,num,kind){return pollKey(g,num,kind)+'_'+Date.now().toString(36);}
-function pollKindLabel(p){
-  return pollKind(p)==='under'?(underLabel(p.group)+' 曲'):'表題曲';
-}
-function voteId(pid,uid){return pid+'_'+uid;}
-
 // 曲名之類的自由輸入先清一遍（玩家的顯示名用 cleanUserId）
 function cleanNick(v){
-  return String(v||'').replace(/[\u0000-\u001f\u007f]/g,'').trim().slice(0,NICK_MAX);
+  return String(v||'').replace(/[\u0000-\u001f\u007f]/g,'').trim().slice(0,60);
 }
+// 注單的文件 id：一個預測、一個人只佔得到一格
+function voteId(pid,uid){return pid+'_'+uid;}
 
+// ── 盤口種類 ──
+// 每一種要能做三件事：生候選名單、從單曲資料自動對出答案、講出自己是什麼。
+// 舊的預測只有 kind: 'sel' / 'under'，一律對應到 center / undercenter。
+const BET_TYPES={
+  center:{
+    label:()=>'表題曲 C 位', need:'',
+    cands:g=>pollCandidates(g),
+    answer:(g,d)=>d.center||[]
+  },
+  undercenter:{
+    label:g=>underLabel(g)+' 曲 C 位', need:'',
+    cands:g=>pollCandidates(g),
+    answer:(g,d)=>centerOfRows(underRowsOf(g,d)||[])
+  },
+  count:{
+    label:()=>'選拔人數', need:'',
+    // 以目前在籍人數為上限給一段合理範圍
+    cands:g=>{const n=pollCandidates(g).length;
+      const lo=Math.max(6,Math.min(14,n-10)), hi=Math.min(n,lo+14);
+      const out=[];for(let i=lo;i<=hi;i++)out.push(String(i)+'名');return out;},
+    answer:(g,d)=>{const n=selCountOf(d);return n?[String(n)+'名']:[];}
+  },
+  fukujin:{
+    label:()=>'福神人數', need:'',
+    cands:()=>{const out=[];for(let i=3;i<=12;i++)out.push(String(i)+'名');return out;},
+    answer:(g,d)=>{const f=(d.fukujin||[]).length;return f?[String(f)+'名']:[];}
+  },
+  member:{
+    label:(g,p)=>'「'+(p&&p.subject||'某人')+'」進不進選拔', need:'member',
+    cands:()=>['會進選拔','不會進選拔'],
+    answer:(g,d,p)=>{
+      if(!p||!p.subject)return [];
+      const L=lineupOf(g,d);
+      const inSel=!!(L[p.subject]&&L[p.subject].sel);
+      return [inSel?'會進選拔':'不會進選拔'];
+    }
+  }
+};
+// 這張單曲的選拔人數。站位優先，沒站位才退回名單。
+function selCountOf(d){
+  if(!d)return 0;
+  const rows=(d.rows||[]).filter(r=>Array.isArray(r)&&r.length);
+  if(rows.length)return new Set([].concat.apply([],rows)).size;
+  return new Set([].concat(d.fukujin||[],d.back||[])).size;
+}
+function pollType(p){
+  if(p&&p.type&&BET_TYPES[p.type])return p.type;
+  return p&&p.kind==='under'?'undercenter':'center';   // 舊資料
+}
+function pollKind(p){return pollType(p)==='undercenter'?'under':'sel';}
+// 邏輯上的唯一鍵：同一張單曲的同一種盤口只能開一個（指定成員的再加上那個人）
+function pollKey(g,num,type,subject){
+  return g+'_'+num+'_'+type+(subject?('_'+subject):'');
+}
+function pollKeyOf(p){return pollKey(p.group,p.num,pollType(p),p.subject);}
+// 文件 id 另外帶一段建立時間。刪掉再開一個同樣的預測時，id 會不一樣——
+// 這很重要，因為「我押過了」是記在瀏覽器裡、用 id 當鍵的，而注單的文件 id
+// 也是 {預測id}_{uid}。id 若重複使用，新預測會繼承舊預測的狀態。
+function pollId(g,num,type,subject){
+  return pollKey(g,num,type,subject).replace(/\s+/g,'')+'_'+Date.now().toString(36);
+}
+function pollKindLabel(p){
+  const t=BET_TYPES[pollType(p)];
+  return t?t.label(p.group,p):'預測';
+}
+function pollCandsFor(g,type,subject){
+  const t=BET_TYPES[type]; if(!t)return [];
+  return t.cands(g,{subject});
+}
 function pollOpen(p){
   if(p.closed)return false;
-  // 答案可能是自動從單曲的 center 對上的，不是只看 p.answer 這個欄位，
-  // 否則單曲一公布、答案都攤在畫面上了，還能繼續投。
+  // 答案可能是自動從單曲資料對上的，不是只看 p.answer 這個欄位，
+  // 否則單曲一公布、答案都攤在畫面上了，還能繼續下注。
   if(pollAnswer(p))return false;
   const d=p.deadline?Date.parse(p.deadline):NaN;
   return isNaN(d)||Date.now()<d;
 }
-// 答案：優先用手動填的，否則等單曲建好之後自動取它的 center
 function pollAnswer(p){
   if(p.answer)return p.answer;
   const d=(getData(p.group)||[]).find(x=>x.num===p.num);
   if(!d)return null;
-  // 表題曲直接看 center；Under 曲沒有 center 欄位，取站位前排正中央
-  const c=pollKind(p)==='under'
-    ? centerOfRows(underRowsOf(p.group,d)||[])
-    : (d.center||[]);
-  return c&&c.length?c.join('、'):null;
+  const t=BET_TYPES[pollType(p)]; if(!t)return null;
+  const c=t.answer(p.group,d,p)||[];
+  return c.length?c.join('、'):null;
 }
 function pollTally(p){
   const t=p.tally||{};
@@ -1707,7 +1918,10 @@ function buildPollList(){
   if(!isPlayer()){host.appendChild(buildLoginBox());return;}
   if(!myWallet){host.appendChild(buildWalletBox());return;}
   host.appendChild(buildWalletBar());
+  host.appendChild(buildPollTabs());
+  if(pollTab==='quiz'){host.appendChild(buildQuizBox());return;}
   if(!pollReady){host.appendChild(elWith('div','poll-empty','載入中…'));return;}
+  if(canEdit()&&newPollOpen)host.appendChild(buildNewPollForm());
   if(!pollData.length){
     host.appendChild(elWith('div','poll-empty',
       canEdit()?'還沒有任何預測。按下面的「＋ 開一個新預測」建立。'
@@ -1891,6 +2105,77 @@ function buildWalletBox(){
   box.appendChild(b);
   return box;
 }
+let pollTab='bet';
+function setPollTab(t){pollTab=t;buildPollList();}
+function buildPollTabs(){
+  const bar=elWith('div','pt-tabs');
+  [['bet','🎲 賭盤'],['quiz','🧠 冷知識測驗']].forEach(([k,label])=>{
+    const b=document.createElement('button');
+    b.className='pt-tab'+(pollTab===k?' active':'');
+    b.textContent=label; b.onclick=()=>setPollTab(k);
+    bar.appendChild(b);
+  });
+  return bar;
+}
+function buildQuizBox(){
+  const box=elWith('div','poll-card');
+  const done=quizDoneToday();
+  if(!quizState){
+    box.appendChild(elWith('div','lg-title','冷知識測驗'));
+    box.appendChild(elWith('div','lg-note',
+      QUIZ_N+' 題，全部從站上的資料出。答對一題 '+QUIZ_PER+' 坂幣，'+
+      '滿分 '+QUIZ_MAX+'。一天只能領一次獎金，但隨時可以再玩。'));
+    if(done)box.appendChild(elWith('div','qz-done',
+      '今天的獎金已經領過了（'+coin(myWallet.quizGain||0)+'）。'+
+      '現在開始只能練習，不計獎金。'));
+    const b=document.createElement('button');
+    b.className='btn-save'; b.textContent=done?'純練習':'開始測驗';
+    b.onclick=startQuiz;
+    box.appendChild(b);
+    return box;
+  }
+  const answered=Object.keys(quizState.answers).length;
+  box.appendChild(elWith('div','lg-title',
+    quizState.done?'測驗結束':('冷知識測驗　'+answered+' / '+quizState.qs.length)));
+  if(quizState.done){
+    const gain=quizState.score*QUIZ_PER;
+    box.appendChild(elWith('div','qz-score',
+      '答對 '+quizState.score+' / '+quizState.qs.length+
+      '　→　'+(done&&!gain?'':'+'+coin(gain))));
+    if(done)box.appendChild(elWith('div','qz-done','（今天已領過，這次不計獎金）'));
+  }
+  quizState.qs.forEach((q,i)=>{
+    const my=quizState.answers[i];
+    const wrap=elWith('div','qz-q');
+    wrap.appendChild(elWith('div','qz-text',(i+1)+'. '+q.q));
+    const opts=elWith('div','qz-opts');
+    q.options.forEach(o=>{
+      const btn=document.createElement('button');
+      btn.className='qz-opt';
+      if(my!==undefined){
+        if(o===q.answer)btn.classList.add('is-right');
+        else if(o===my)btn.classList.add('is-wrong');
+        btn.disabled=true;
+      }
+      btn.textContent=o;
+      btn.onclick=()=>answerQuiz(i,o);
+      opts.appendChild(btn);
+    });
+    wrap.appendChild(opts);
+    box.appendChild(wrap);
+  });
+  if(quizState.done){
+    const again=document.createElement('button');
+    again.className='btn-save'; again.textContent='再玩一次';
+    again.onclick=startQuiz;
+    const back=document.createElement('button');
+    back.className='pg-btn'; back.textContent='回賭盤';
+    back.onclick=()=>{quizState=null;setPollTab('bet');};
+    const row=elWith('div','lg-row'); row.append(again,back);
+    box.appendChild(row);
+  }
+  return box;
+}
 function buildWalletBar(){
   const bar=elWith('div','wallet-bar');
   bar.append(
@@ -2036,36 +2321,115 @@ async function settlePoll(id){
 }
 
 // ── 管理：建立／截止／刪除 ──
+// ── 開盤台（站長限定）──
+// 原本是一連串 prompt()，選項一多就不堪用了，改成面板裡的表單。
+let newPollOpen=false;
 function openNewPoll(){
   if(!canEdit())return;
-  const g=currentHash();
-  const list=getData(g).slice().sort((a,b)=>b.num-a.num);
-  const next=(list[0]?list[0].num:0)+1;
-  const num=prompt('要為哪一張單曲開預測？（輸入編號）\n團體：'+(GROUP_NAME[g]||g),
-                   String(next));
-  if(num===null)return;
-  const n=parseInt(num,10);
-  if(!n||n<1){showMsg('poll-msg','err','編號看不懂。',false);return;}
-  // 表題與 Under 各開各的，所以要先問是哪一首
-  const k=prompt('要猜哪一首的 C？\n  1 = 表題曲\n  2 = '+underLabel(g)+' 曲','1');
-  if(k===null)return;
-  const kind=String(k).trim()==='2'?'under':'sel';
-  const id=pollId(g,n,kind);
-  if(pollData.some(x=>pollKeyOf(x)===pollKey(g,n,kind))){
-    showMsg('poll-msg','err','第'+n+'張的'+(kind==='under'?underLabel(g)+' 曲':'表題曲')+
-            '已經有預測了。',false);return;}
-  const title=prompt('曲名（還沒公布可以留空）','')||'';
-  const deadline=prompt('投票截止時間（YYYY-MM-DD，留空就不自動截止）','')||'';
-  const cands=pollCandidates(g);
-  if(!cands.length){showMsg('poll-msg','err','這個團沒有在籍成員可以當候選。',false);return;}
-  db.collection(POLL_COL).doc(id).set({
-    group:g,num:n,kind,title:cleanNick(title).slice(0,60),
-    deadline:deadline?deadline+'T23:59':'',
-    candidates:cands,tally:{},voteCount:0,pool:0,settled:false,answer:'',closed:false,
-    createdAt:Date.now()
-  }).then(()=>showMsg('poll-msg','ok','✓ 開好了：'+(GROUP_NAME[g]||g)+' 第'+n+'張 '+
-      (kind==='under'?underLabel(g)+' 曲':'表題曲')+'，候選 '+cands.length+' 人。',true))
-    .catch(e=>showMsg('poll-msg','err','建立失敗：'+e.message,false));
+  newPollOpen=!newPollOpen;
+  buildPollList();
+}
+function buildNewPollForm(){
+  const box=elWith('div','poll-card np-box');
+  box.appendChild(elWith('div','lg-title','開一個新盤口'));
+
+  const g0=currentHash();
+  const row=(label,el)=>{const r=elWith('div','np-row');
+    r.append(elWith('label','np-lbl',label),el);return r;};
+
+  const gSel=document.createElement('select');
+  ALL_GROUPS.forEach(g=>gSel.appendChild(new Option(GROUP_NAME[g]||g,g)));
+  gSel.value=g0;
+
+  const num=document.createElement('input');
+  num.type='number'; num.min='1'; num.step='1';
+
+  const tSel=document.createElement('select');
+  Object.keys(BET_TYPES).forEach(k=>
+    tSel.appendChild(new Option(BET_TYPES[k].label(gSel.value,{subject:'某成員'}),k)));
+
+  // 只有「某成員進不進選拔」要指定對象
+  const mSel=document.createElement('select');
+  const mRow=row('指定成員',mSel);
+  mRow.classList.add('np-member');
+
+  const title=document.createElement('input');
+  title.type='text'; title.maxLength=60; title.placeholder='還沒公布可以留空';
+
+  const dl=document.createElement('input');
+  dl.type='date';
+
+  const prev=elWith('div','np-prev');
+
+  function nextNum(g){
+    const list=getData(g).slice().sort((a,b)=>b.num-a.num);
+    return (list[0]?list[0].num:0)+1;
+  }
+  function fillMembers(){
+    const g=gSel.value, cur=mSel.value;
+    mSel.innerHTML='';
+    pollCandidates(g).forEach(n=>mSel.appendChild(new Option(n,n)));
+    if(cur&&[...mSel.options].some(o=>o.value===cur))mSel.value=cur;
+  }
+  function fillTypes(){
+    const cur=tSel.value;
+    tSel.innerHTML='';
+    Object.keys(BET_TYPES).forEach(k=>
+      tSel.appendChild(new Option(BET_TYPES[k].label(gSel.value,{subject:'某成員'}),k)));
+    if(cur&&[...tSel.options].some(o=>o.value===cur))tSel.value=cur;
+  }
+  function sync(){
+    const g=gSel.value, type=tSel.value;
+    mRow.style.display=BET_TYPES[type].need==='member'?'':'none';
+    const subject=BET_TYPES[type].need==='member'?mSel.value:'';
+    const cands=pollCandsFor(g,type,subject);
+    prev.innerHTML='';
+    prev.append(elWith('span','np-prev-h','候選 '+cands.length+' 項：'),
+      elWith('span','np-prev-v',
+        cands.slice(0,8).join('、')+(cands.length>8?('… 等 '+cands.length+' 項'):'')));
+    const dup=pollData.some(x=>pollKeyOf(x)===pollKey(g,parseInt(num.value,10),type,subject));
+    mk.disabled=!(parseInt(num.value,10)>0)||!cands.length||dup;
+    mk.textContent=dup?'這個盤口已經開過了':'＋ 開盤';
+  }
+  const mk=document.createElement('button');
+  mk.className='btn-save'; mk.textContent='＋ 開盤';
+
+  gSel.onchange=()=>{num.value=nextNum(gSel.value);fillTypes();fillMembers();sync();};
+  tSel.onchange=sync; mSel.onchange=sync; num.oninput=sync;
+
+  mk.onclick=()=>{
+    const g=gSel.value, type=tSel.value, n=parseInt(num.value,10);
+    const subject=BET_TYPES[type].need==='member'?mSel.value:'';
+    const cands=pollCandsFor(g,type,subject);
+    mk.disabled=true; mk.textContent='建立中…';
+    db.collection(POLL_COL).doc(pollId(g,n,type,subject)).set({
+      group:g,num:n,type,subject,
+      title:cleanNick(title.value).slice(0,60),
+      deadline:dl.value?dl.value+'T23:59':'',
+      candidates:cands,tally:{},voteCount:0,pool:0,settled:false,
+      answer:'',closed:false,createdAt:Date.now()
+    }).then(()=>{
+      showMsg('poll-msg','ok','✓ 開好了：'+(GROUP_NAME[g]||g)+' 第'+n+'張 '+
+        BET_TYPES[type].label(g,{subject})+'，候選 '+cands.length+' 項。',true);
+      newPollOpen=false; buildPollList();
+    }).catch(e=>{
+      mk.disabled=false; mk.textContent='＋ 開盤';
+      showMsg('poll-msg','err','建立失敗：'+e.message,false);
+    });
+  };
+
+  num.value=nextNum(g0);
+  fillTypes(); fillMembers();
+  box.append(row('團體',gSel),row('第幾張',num),row('賭什麼',tSel),mRow,
+             row('曲名',title),row('截止日',dl),prev);
+  const btns=elWith('div','lg-row');
+  const cancel=document.createElement('button');
+  cancel.className='pg-btn'; cancel.textContent='取消';
+  cancel.onclick=()=>{newPollOpen=false;buildPollList();};
+  btns.append(mk,cancel);
+  box.appendChild(btns);
+  sync();
+  return box;
 }
 function togglePollClosed(id,closed){
   if(!canEdit())return;
@@ -2573,7 +2937,7 @@ if(db){
     snap.forEach(d=>pollData.push({id:d.id,...d.data()}));
     pollData.sort((a,b)=>(b.num-a.num)
       ||String(a.group).localeCompare(b.group)
-      ||pollKind(a).localeCompare(pollKind(b)));
+      ||String(pollType(a)).localeCompare(pollType(b)));
     pollReady=true;
     reconcileMyVotes();
     updatePollBadge();
