@@ -13,6 +13,45 @@ service cloud.firestore {
           && request.auth.uid == 'cHr53MtDS0OgfHm7xC9E1CVtbpA2';
     }
 
+    function pollOpenFor(pid) {
+      let p = get(/databases/$(database)/documents/polls/$(pid)).data;
+      return p.get('closed', false) == false && p.get('answer', '') == '';
+    }
+
+    function validBet(bid) {
+      let d = request.resource.data;
+      return request.auth != null
+        && bid == d.pollId + '_' + request.auth.uid
+        && d.uid == request.auth.uid
+        && d.keys().hasOnly(['pollId', 'uid', 'name', 'pick', 'stake', 'at'])
+        && d.keys().hasAll(['pollId', 'uid', 'name', 'pick', 'stake', 'at'])
+        && d.pick is string
+        && d.name is string
+        && d.name.size() <= 16
+        && d.stake is int
+        && d.stake > 0
+        && d.at is number
+        // 錢包那邊必須指回這一注，金額才會被核對到
+        && getAfter(/databases/$(database)/documents/wallets/$(request.auth.uid))
+             .data.lastBet == d.pollId
+        && pollOpenFor(d.pollId)
+        && d.pick in get(/databases/$(database)/documents/polls/$(d.pollId)).data.candidates;
+    }
+
+    function isBetDeduction(uid) {
+      let d = request.resource.data;
+      let old = resource.data;
+      let bid = d.lastBet + '_' + uid;
+      return d.diff(old).affectedKeys().hasOnly(['balance', 'lastBet'])
+          && d.lastBet is string
+          && d.balance is int
+          && d.balance >= 0
+          && d.balance < old.balance
+          && existsAfter(/databases/$(database)/documents/bets/$(bid))
+          && old.balance - d.balance
+             == getAfter(/databases/$(database)/documents/bets/$(bid)).data.stake;
+    }
+
     // ── 單曲與成員名冊：公開讀，只有站長能寫 ──
     match /nogi/{doc}    { allow read: if true; allow write: if isOwner(); }
     match /hinata/{doc}  { allow read: if true; allow write: if isOwner(); }
@@ -97,50 +136,12 @@ service cloud.firestore {
         && isBetDeduction(uid);
     }
 
-    function isBetDeduction(uid) {
-      let d = request.resource.data;
-      let old = resource.data;
-      let bid = d.lastBet + '_' + uid;
-      return d.diff(old).affectedKeys().hasOnly(['balance', 'lastBet'])
-          && d.lastBet is string
-          && d.balance is int
-          && d.balance >= 0
-          && d.balance < old.balance
-          && existsAfter(/databases/$(database)/documents/bets/$(bid))
-          && old.balance - d.balance
-             == getAfter(/databases/$(database)/documents/bets/$(bid)).data.stake;
-    }
-
     match /bets/{bid} {
       // 注單帶著玩家取的名字，不讓任何人整包撈走；站長要結算所以讀得到
       allow read: if isOwner()
                   || (request.auth != null && resource.data.uid == request.auth.uid);
       allow update, delete: if isOwner();
       allow create: if validBet(bid);
-    }
-
-    function validBet(bid) {
-      let d = request.resource.data;
-      return request.auth != null
-        && bid == d.pollId + '_' + request.auth.uid
-        && d.uid == request.auth.uid
-        && d.keys().hasOnly(['pollId', 'uid', 'name', 'pick', 'stake', 'at'])
-        && d.keys().hasAll(['pollId', 'uid', 'name', 'pick', 'stake', 'at'])
-        && d.pick is string
-        && d.name is string
-        && d.name.size() <= 16
-        && d.stake is int
-        && d.stake > 0
-        && d.at is number
-        // 錢包那邊必須指回這一注，金額才會被核對到
-        && getAfter(/databases/$(database)/documents/wallets/$(request.auth.uid))
-             .data.lastBet == d.pollId
-        && pollOpenFor(d.pollId)
-        && d.pick in get(/databases/$(database)/documents/polls/$(d.pollId)).data.candidates;
-    }
-    function pollOpenFor(pid) {
-      let p = get(/databases/$(database)/documents/polls/$(pid)).data;
-      return p.get('closed', false) == false && p.get('answer', '') == '';
     }
 
     // 一人一票：文件 id 固定是 {pollId}_{uid}，所以同一個人只佔得到一格。
