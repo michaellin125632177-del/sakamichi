@@ -544,7 +544,24 @@ body.is-guest .edit-only{display:none!important;}
 .poll-empty{color:#64748b;font-size:.8rem;padding:10px 2px;text-align:center;}
 .poll-note{font-size:.72rem;color:#7c5cb0;margin-top:7px;}
 .poll-pick{display:flex;gap:7px;flex-wrap:wrap;align-items:center;}
-.poll-pick select{flex:1;min-width:190px;background:#0e0818;border:1px solid #4a2d7a;
+.pv-amt{width:92px;background:#0e0818;border:1px solid #4a2d7a;border-radius:8px;
+  color:#f0e6ff;padding:9px 10px;font-size:.84rem;outline:none;}
+.wallet-bar{display:flex;align-items:center;gap:10px;flex-wrap:wrap;
+  padding:8px 11px;margin-bottom:11px;border-radius:10px;
+  background:rgba(245,158,11,.08);border:1px solid rgba(245,158,11,.3);}
+.wl-name{color:#e9d5ff;font-size:.84rem;font-weight:600;}
+.wl-coin{color:#fcd34d;font-size:.95rem;font-weight:800;margin-left:auto;}
+.lg-title{color:#e9d5ff;font-weight:700;font-size:.95rem;margin-bottom:5px;}
+.lg-note{color:#9370c0;font-size:.76rem;line-height:1.55;margin-bottom:11px;}
+.lg-warn{color:#fca5a5;font-size:.74rem;margin-top:9px;line-height:1.5;}
+.poll-card>input{display:block;width:100%;background:#0e0818;border:1px solid #4a2d7a;
+  border-radius:8px;color:#f0e6ff;padding:10px 12px;font-size:.88rem;
+  outline:none;margin-bottom:8px;}
+.poll-card>input:focus{border-color:#a855f7;}
+.lg-row{display:flex;gap:7px;margin-top:3px;}
+.pg-btn.settle{border-color:#f59e0b;color:#fcd34d;}
+.ph-pool{color:#fcd34d;font-size:.72rem;}
+.poll-pick select{flex:1;min-width:150px;background:#0e0818;border:1px solid #4a2d7a;
   border-radius:8px;color:#f0e6ff;padding:9px 11px;font-size:.84rem;outline:none;}
 .poll-admin{display:flex;gap:7px;margin-top:10px;padding-top:9px;
   border-top:1px solid rgba(255,255,255,.05);}
@@ -633,7 +650,7 @@ body.is-guest .edit-only{display:none!important;}
   .tj-legend{font-size:.74rem;}
 
   /* ── 觸控目標 ── */
-  .poll-pick select{min-height:38px;font-size:.86rem;}
+  .poll-pick select,.pv-amt,.poll-card>input{min-height:40px;font-size:.86rem;}
   .pv-row{font-size:.82rem;}
   .ph-row>summary{font-size:.8rem;}
   .fm-pick{font-size:.76rem;min-height:34px;padding-top:6px;padding-bottom:6px;}
@@ -787,12 +804,7 @@ body.is-guest .edit-only{display:none!important;}
 <div class="modal" id="pollModal">
   <div class="modal-box">
     <h2>🎯 下一張單曲的 C 位預測</h2>
-    <div class="modal-sub">猜猜看誰會是 center。投完才看得到目前票數。</div>
-    <div class="mr" style="margin-top:12px;">
-      <label for="poll-nick">你的暱稱（會跟著你的預測顯示，隨時可改）</label>
-      <input type="text" id="poll-nick" maxlength="16" placeholder="例：坂道老司機"
-             oninput="setMyNick(this.value)">
-    </div>
+    <div class="modal-sub">猜猜看誰會是 center，押上你的坂幣。下注後才看得到目前票數。</div>
     <div id="poll-list"></div>
     <div id="poll-msg" class="mmsg"></div>
     <div class="mbtns">
@@ -1453,6 +1465,87 @@ function fromDoc(id,data){
 }
 
 // ══════════════════════════════════════════
+// 玩家帳號與虛擬籌碼
+// ══════════════════════════════════════════
+// 下注要有個「換瀏覽器也還是同一個人」的身分，否則輸光了清一下資料就重來。
+// 自己寫的登入擋不住任何人——Firestore 規則只認 request.auth，也就是
+// Firebase Auth 核發的身分；瀏覽器裡自己設的 loggedIn 旗標對規則不存在。
+// 所以底層用 Firebase 的「電子郵件/密碼」，但把使用者取的 ID 雜湊成一個
+// 內部信箱，使用者從頭到尾只看到 ID 與密碼，不必交出 email。
+const WALLET_COL='wallets', BET_COL='bets';
+const ID_DOMAIN='@users.sakamichidb.com';
+const START_COIN=1000;            // 新帳號的起始籌碼
+const COIN='坂幣';
+let myWallet=null, walletUnsub=null;
+
+function cleanUserId(v){
+  return String(v||'').replace(/[\u0000-\u001f\u007f@\s]/g,'').trim().slice(0,16);
+}
+// ID 可能是中文，而信箱的帳號部分只能用 ASCII，所以雜湊成固定長度的十六進位。
+// 大小寫與前後空白先正規化，免得「Abc」和「abc」變成兩個帳號。
+async function idToEmail(id){
+  const norm=cleanUserId(id).toLowerCase();
+  const buf=await crypto.subtle.digest('SHA-256',new TextEncoder().encode(norm));
+  const hex=[...new Uint8Array(buf)].map(b=>b.toString(16).padStart(2,'0')).join('');
+  return 'u'+hex.slice(0,32)+ID_DOMAIN;
+}
+function isPlayer(){return !!(authUser&&!authUser.isAnonymous);}
+
+async function registerPlayer(id,pw){
+  const name=cleanUserId(id);
+  if(name.length<2)throw new Error('ID 至少要 2 個字');
+  if(String(pw||'').length<6)throw new Error('密碼至少要 6 個字');
+  const email=await idToEmail(name);
+  let cred;
+  try{
+    cred=await firebaseAuth.createUserWithEmailAndPassword(email,pw);
+  }catch(e){
+    if(e&&e.code==='auth/email-already-in-use')throw new Error('這個 ID 已經有人用了');
+    if(e&&e.code==='auth/weak-password')throw new Error('密碼太短，至少 6 個字');
+    throw e;
+  }
+  await db.collection(WALLET_COL).doc(cred.user.uid).set({
+    name,balance:START_COIN,createdAt:Date.now()});
+  return cred.user;
+}
+async function loginPlayer(id,pw){
+  const email=await idToEmail(id);
+  try{
+    return (await firebaseAuth.signInWithEmailAndPassword(email,pw)).user;
+  }catch(e){
+    const c=e&&e.code||'';
+    if(/user-not-found|invalid-credential|wrong-password|invalid-login/.test(c))
+      throw new Error('ID 或密碼不對');
+    throw e;
+  }
+}
+// 用 Google 登入的站長也要有錢包才下得了注
+async function ensureWallet(name){
+  if(!authUser)throw new Error('請先登入');
+  if(myWallet)return myWallet;
+  const n=cleanUserId(name||authUser.displayName||'站長')||'站長';
+  await db.collection(WALLET_COL).doc(authUser.uid).set({
+    name:n,balance:START_COIN,createdAt:Date.now()});
+  return {name:n,balance:START_COIN};
+}
+// 只訂閱自己這一筆，所以不管有多少玩家，每個人都只多讀 1 筆
+function watchWallet(){
+  if(walletUnsub){walletUnsub();walletUnsub=null;}
+  myWallet=null;
+  if(!db||!isPlayer()){renderPollIfOpen();return;}
+  walletUnsub=db.collection(WALLET_COL).doc(authUser.uid).onSnapshot(d=>{
+    myWallet=d.exists?d.data():null;
+    renderPollIfOpen();
+  },err=>{console.warn('wallet',err);myWallet=null;renderPollIfOpen();});
+}
+function renderPollIfOpen(){
+  const m=document.getElementById('pollModal');
+  if(m&&m.classList.contains('open'))buildPollList();
+  updatePollBadge();
+}
+function coin(n){return (n||0).toLocaleString('en-US')+' '+COIN;}
+
+// ══════════════════════════════════════════
 // 單曲 C 位預測
 // ══════════════════════════════════════════
 // 設計上最重要的一點：票數是用 FieldValue.increment 直接累加在 poll 文件裡，
@@ -1461,7 +1554,6 @@ function fromDoc(id,data){
 const POLL_COL='polls', VOTE_COL='votes';
 const GROUP_BAR={nogi:'#9333ea',hinata:'#0284c7',sakura:'#ffffff',
                  keyaki:'#059669',aoba:'#06b6d4'};
-const NICK_KEY='sakamichi-nick';
 const NICK_MAX=16;
 let pollData=[], pollReady=false, myVotes={};   // pollId -> {pick,nick}
 
@@ -1482,17 +1574,9 @@ function pollKindLabel(p){
 }
 function voteId(pid,uid){return pid+'_'+uid;}
 
-// 暱稱：訪客自己取，存在這台裝置上，投票時一起寫進票裡
+// 曲名之類的自由輸入先清一遍（玩家的顯示名用 cleanUserId）
 function cleanNick(v){
   return String(v||'').replace(/[\u0000-\u001f\u007f]/g,'').trim().slice(0,NICK_MAX);
-}
-function myNick(){return cleanNick(localStorage.getItem(NICK_KEY)||'');}
-// 邊打邊存：改了暱稱卻沒投票的話，原本那次修改會白做。
-// 存的是這台裝置的 localStorage，不會上傳，也不需要任何個資。
-function setMyNick(v){
-  const n=cleanNick(v);
-  try{ n?localStorage.setItem(NICK_KEY,n):localStorage.removeItem(NICK_KEY); }catch(e){}
-  return n;
 }
 
 function pollOpen(p){
@@ -1528,32 +1612,35 @@ function pollCandidates(g){
     .sort((a,b)=>a.localeCompare(b,'ja'));
 }
 
-// 匿名身分是投票當下才建立的，純瀏覽的人不會產生帳號
-async function ensureVoter(){
-  if(!firebaseAuth)throw new Error('Firebase Auth 未載入');
-  if(firebaseAuth.currentUser)return firebaseAuth.currentUser;
-  const r=await firebaseAuth.signInAnonymously();
-  return r.user||firebaseAuth.currentUser;
-}
-
-async function castVote(pid,pick,nick){
+// 下注。扣錢、記注單、累加票數與彩池，全部在同一個批次裡——
+// 錢扣了注單沒進去（或反過來）的情況不會發生。
+async function placeBet(pid,pick,stake){
   const p=pollData.find(x=>x.id===pid);
   if(!p)throw new Error('找不到這個預測');
   if(!pollOpen(p))throw new Error('這個預測已經截止了');
   if(!(p.candidates||[]).includes(pick))throw new Error('不在候選名單內');
-  const user=await ensureVoter();
-  const vid=voteId(pid,user.uid);
-  const n=setMyNick(nick);
-  const batch=db.batch();
-  batch.set(db.collection(VOTE_COL).doc(vid),
-    {pollId:pid,uid:user.uid,pick,nick:n,at:Date.now()});
-  // 同一批次裡累加票數：票寫進去了但總數沒加到的情況不會發生
+  if(!isPlayer())throw new Error('請先登入');
+  const amt=Math.floor(Number(stake));
+  if(!(amt>0))throw new Error('下注金額要大於 0');
+  const w=myWallet||await ensureWallet();
+  if(amt>(w.balance||0))throw new Error('籌碼不夠，你只有 '+coin(w.balance||0));
+  const uid=authUser.uid, vid=voteId(pid,uid);
   const inc=firebase.firestore.FieldValue.increment(1);
+  const batch=db.batch();
+  batch.set(db.collection(BET_COL).doc(vid),
+    {pollId:pid,uid,name:w.name||'',pick,stake:amt,at:Date.now()});
   batch.update(db.collection(POLL_COL).doc(pid),
     new firebase.firestore.FieldPath('tally',pick),inc,
-    new firebase.firestore.FieldPath('voteCount'),inc);
+    new firebase.firestore.FieldPath('voteCount'),inc,
+    new firebase.firestore.FieldPath('pool'),
+      firebase.firestore.FieldValue.increment(amt));
+  // lastBet 是給規則用的：它靠這個欄位找到對應的注單、核對扣款金額
+  batch.update(db.collection(WALLET_COL).doc(uid),
+    new firebase.firestore.FieldPath('balance'),
+      firebase.firestore.FieldValue.increment(-amt),
+    new firebase.firestore.FieldPath('lastBet'),pid);
   await batch.commit();
-  myVotes[pid]={pick,nick:n};
+  myVotes[pid]={pick,nick:w.name||'',stake:amt};
   try{localStorage.setItem('sakamichi-votes',JSON.stringify(myVotes));}catch(e){}
 }
 
@@ -1585,8 +1672,6 @@ function updatePollBadge(){
   b.classList.toggle('has-poll',n>0);
 }
 function openPollModal(){
-  const nick=document.getElementById('poll-nick');
-  if(nick)nick.value=myNick();
   document.getElementById('poll-msg').style.display='none';
   buildPollList();
   openModal('pollModal');
@@ -1607,6 +1692,11 @@ function pollBar(name,n,total,isAnswer,isMine){
 function buildPollList(){
   const host=document.getElementById('poll-list'); if(!host)return;
   host.innerHTML='';
+  if(!authReady){host.appendChild(elWith('div','poll-empty','載入中…'));return;}
+  // 下注要有個跨瀏覽器都認得的身分，所以整個面板先擋在登入後面
+  if(!isPlayer()){host.appendChild(buildLoginBox());return;}
+  if(!myWallet){host.appendChild(buildWalletBox());return;}
+  host.appendChild(buildWalletBar());
   if(!pollReady){host.appendChild(elWith('div','poll-empty','載入中…'));return;}
   if(!pollData.length){
     host.appendChild(elWith('div','poll-empty',
@@ -1636,7 +1726,8 @@ function buildPollCard(p){
   const meta=[];
   if(p.date)meta.push('預計 '+p.date);
   if(p.deadline&&open)meta.push('截止 '+p.deadline.replace('T',' ').slice(0,16));
-  meta.push((p.voteCount||0)+' 人投過');
+  meta.push((p.voteCount||0)+' 人下注');
+  if(p.pool)meta.push('彩池 '+coin(p.pool));
   box.appendChild(elWith('div','poll-meta',meta.join('　·　')));
 
   if(ans){
@@ -1655,7 +1746,8 @@ function buildPollCard(p){
       box.appendChild(wrap);
     }
     if(mine&&open)box.appendChild(elWith('div','poll-note',
-      '你投了「'+mine.pick+'」。每人一票，投出後不能更改。'));
+      '你押了「'+mine.pick+'」'+(mine.stake?(' '+coin(mine.stake)):'')+
+      '。每人一注，下注後不能更改。'));
   } else {
     box.appendChild(buildVotePicker(p));
   }
@@ -1674,6 +1766,25 @@ function buildPollAdmin(p){
     cl.onclick=()=>togglePollClosed(p.id,!p.closed);
     bar.appendChild(cl);
   }
+  // 開獎了但還沒發錢
+  if(pollAnswer(p)&&!p.settled&&(p.pool||0)>0){
+    const st=document.createElement('button');
+    st.className='pg-btn settle'; st.textContent='💰 結算發錢';
+    st.onclick=async()=>{
+      st.disabled=true; st.textContent='結算中…';
+      try{
+        const r=await settlePoll(p.id);
+        showMsg('poll-msg','ok',r.refund
+          ? ('無人猜中，'+coin(r.pool)+' 已全額退還給 '+r.rows.length+' 位下注者。')
+          : ('✓ 已發出 '+coin(r.pool)+' 給 '+r.rows.length+' 位猜中的人。'),true);
+        buildPollList();
+      }catch(e){
+        st.disabled=false; st.textContent='💰 結算發錢';
+        showMsg('poll-msg','err','結算失敗：'+(e&&e.message||e),false);
+      }
+    };
+    bar.appendChild(st);
+  }
   const del=document.createElement('button');
   del.className='pg-btn danger'; del.textContent='🗑 刪除';
   del.onclick=()=>deletePoll(p.id,p);
@@ -1685,28 +1796,103 @@ function buildVotePicker(p){
   const sel=document.createElement('select');
   sel.className='pk-name'; sel.id='pv-sel-'+p.id;
   // 這個提示留著當欄位的預設文字，但設成 hidden 就不會出現在展開的清單裡。
-  // 完全拿掉的話會預設選中第一位成員，手一滑就送出了——而票是不能改的。
+  // 完全拿掉的話會預設選中第一位成員，手一滑就下注了——而注是不能收回的。
   const ph=new Option('選擇你覺得會是 C 的成員…','');
   ph.disabled=true; ph.selected=true; ph.hidden=true;
   sel.appendChild(ph);
   (p.candidates||[]).forEach(n=>sel.appendChild(new Option(n,n)));
+  const amt=document.createElement('input');
+  amt.type='number'; amt.min='1'; amt.step='1'; amt.className='pv-amt';
+  amt.id='pv-amt-'+p.id; amt.placeholder='下注';
+  amt.value=Math.min(100,myWallet&&myWallet.balance||0)||'';
   const btn=document.createElement('button');
-  btn.className='btn-save'; btn.textContent='🎯 送出預測'; btn.disabled=true;
-  sel.addEventListener('change',()=>{btn.disabled=!sel.value;});
+  btn.className='btn-save'; btn.textContent='🎲 下注'; btn.disabled=true;
+  const sync=()=>{
+    const v=Math.floor(Number(amt.value));
+    btn.disabled=!sel.value||!(v>0)||v>(myWallet&&myWallet.balance||0);
+  };
+  sel.addEventListener('change',sync);
+  amt.addEventListener('input',sync);
+  const all=document.createElement('button');
+  all.className='pg-btn'; all.textContent='全押';
+  all.onclick=()=>{amt.value=myWallet&&myWallet.balance||0;sync();};
   btn.addEventListener('click',async()=>{
-    btn.disabled=true; btn.textContent='送出中…';
+    btn.disabled=true; btn.textContent='下注中…';
     try{
-      await castVote(p.id,sel.value,document.getElementById('poll-nick').value);
-      showMsg('poll-msg','ok','✓ 已送出：'+(GROUP_NAME[p.group]||p.group)+
-        ' 第'+p.num+'張 '+pollKindLabel(p)+' → '+sel.value,true);
+      await placeBet(p.id,sel.value,amt.value);
+      showMsg('poll-msg','ok','✓ 已下注 '+coin(Math.floor(Number(amt.value)))+
+        '：'+(GROUP_NAME[p.group]||p.group)+' 第'+p.num+'張 '+
+        pollKindLabel(p)+' → '+sel.value,true);
       buildPollList();
     }catch(e){
-      btn.disabled=false; btn.textContent='🎯 送出預測';
-      showMsg('poll-msg','err','送出失敗：'+(e&&e.message||e),false);
+      btn.disabled=false; btn.textContent='🎲 下注';
+      showMsg('poll-msg','err','下注失敗：'+(e&&e.message||e),false);
     }
   });
-  wrap.append(sel,btn);
+  sync();
+  wrap.append(sel,amt,all,btn);
   return wrap;
+}
+
+// ── 登入／錢包的畫面 ──
+function buildLoginBox(){
+  const box=elWith('div','poll-card');
+  box.appendChild(elWith('div','lg-title','下注前請先登入'));
+  box.appendChild(elWith('div','lg-note',
+    '取一組只有你知道的 ID 與密碼。不需要 email，也不會跟你要任何個人資料——'+
+    '這組帳號只是讓你換瀏覽器、換手機回來時，籌碼還認得你。'));
+  const id=document.createElement('input');
+  id.type='text'; id.id='lg-id'; id.maxLength=16; id.placeholder='你的 ID（2～16 字）';
+  const pw=document.createElement('input');
+  pw.type='password'; pw.id='lg-pw'; pw.placeholder='密碼（至少 6 字）';
+  const row=elWith('div','lg-row');
+  const login=document.createElement('button');
+  login.className='btn-save'; login.textContent='登入';
+  const reg=document.createElement('button');
+  reg.className='pg-btn'; reg.textContent='註冊新帳號';
+  const run=async(fn,label)=>{
+    login.disabled=reg.disabled=true;
+    try{
+      await fn(id.value,pw.value);
+      showMsg('poll-msg','ok','✓ '+label+'成功，送你 '+coin(START_COIN)+' 開局。',true);
+    }catch(e){
+      showMsg('poll-msg','err',label+'失敗：'+(e&&e.message||e),false);
+    }
+    login.disabled=reg.disabled=false;
+  };
+  login.onclick=()=>run(loginPlayer,'登入');
+  reg.onclick=()=>run(registerPlayer,'註冊');
+  pw.addEventListener('keydown',e=>{if(e.key==='Enter')login.click();});
+  row.append(login,reg);
+  box.append(id,pw,row);
+  box.appendChild(elWith('div','lg-warn',
+    '⚠️ 沒有 email 就寄不了重設信，密碼忘了救不回來，請自己記好。'));
+  return box;
+}
+function buildWalletBox(){
+  const box=elWith('div','poll-card');
+  box.appendChild(elWith('div','lg-title','還沒有錢包'));
+  box.appendChild(elWith('div','lg-note','建立一個就能開始下注，起始籌碼 '+coin(START_COIN)+'。'));
+  const b=document.createElement('button');
+  b.className='btn-save'; b.textContent='建立錢包';
+  b.onclick=async()=>{
+    b.disabled=true;
+    try{await ensureWallet();}
+    catch(e){b.disabled=false;showMsg('poll-msg','err','建立失敗：'+(e&&e.message||e),false);}
+  };
+  box.appendChild(b);
+  return box;
+}
+function buildWalletBar(){
+  const bar=elWith('div','wallet-bar');
+  bar.append(
+    elWith('span','wl-name','👤 '+(myWallet.name||'')),
+    elWith('span','wl-coin',coin(myWallet.balance)));
+  const out=document.createElement('button');
+  out.className='pg-btn'; out.textContent='登出';
+  out.onclick=()=>firebaseAuth.signOut();
+  bar.appendChild(out);
+  return bar;
 }
 
 // ── 歷來預測結果 ──
@@ -1779,6 +1965,8 @@ function buildHistory(){
         elWith('span','ph-crowd',c?('大家：'+c.names.join('、')+' '+c.pct+'%'):'無人投票'),
         elWith('span','ph-ans','答案：'+ans),
         elWith('span','ph-mark'+(ok?' is-hit':''),ok?'✓ 命中':'✗ 落空'));
+      if(p.pool)s2.appendChild(elWith('span','ph-pool',
+        p.settled?('已發 '+coin(p.pool)):('待結算 '+coin(p.pool))));
     }
     if(mine)s2.appendChild(elWith('span','ph-mine'+
       (ans&&hitBy(ans,[mine.pick])?' is-hit':''),'你：'+mine.pick));
@@ -1798,6 +1986,45 @@ function buildHistory(){
     box.appendChild(row);
   });
   return box;
+}
+
+// ── 結算（站長手動按）──
+// 同注分彩：所有注額進同一個彩池，猜中的人按自己的注額比例分走全部。
+// 沒有莊家，所以不會有賠率設錯就破產的問題；賠率是大家下注的結果。
+// 沒有人猜中就全額退還。
+function settleShares(bets,ans){
+  const pool=bets.reduce((a,b)=>a+(b.stake||0),0);
+  const win=bets.filter(b=>hitBy(ans,[b.pick]));
+  const winPool=win.reduce((a,b)=>a+(b.stake||0),0);
+  if(!win.length)   // 無人中獎：原銀奉還
+    return {pool,refund:true,rows:bets.map(b=>({uid:b.uid,name:b.name,
+      stake:b.stake,payout:b.stake,hit:false}))};
+  return {pool,refund:false,rows:win.map(b=>({uid:b.uid,name:b.name,stake:b.stake,
+    // 用 floor，總和才不會因為進位而超過彩池
+    payout:Math.floor(b.stake/winPool*pool),hit:true}))};
+}
+async function settlePoll(id){
+  if(!canEdit())throw new Error('只有站長能結算');
+  const p=pollData.find(x=>x.id===id);
+  if(!p)throw new Error('找不到這個預測');
+  if(p.settled)throw new Error('這個預測已經結算過了');
+  const ans=pollAnswer(p);
+  if(!ans)throw new Error('還沒開獎，無法結算');
+  const snap=await db.collection(BET_COL).where('pollId','==',id).get();
+  const bets=[]; snap.forEach(d=>bets.push(d.data()));
+  const r=settleShares(bets,ans);
+  const batch=db.batch();
+  r.rows.forEach(row=>{
+    if(row.payout>0)batch.update(db.collection(WALLET_COL).doc(row.uid),
+      new firebase.firestore.FieldPath('balance'),
+      firebase.firestore.FieldValue.increment(row.payout));
+  });
+  batch.update(db.collection(POLL_COL).doc(id),{
+    settled:true,settledAt:Date.now(),
+    payouts:r.rows.filter(x=>x.payout>0)
+      .map(x=>({name:x.name,stake:x.stake,payout:x.payout})).slice(0,50)});
+  await batch.commit();
+  return r;
 }
 
 // ── 管理：建立／截止／刪除 ──
@@ -1826,7 +2053,7 @@ function openNewPoll(){
   db.collection(POLL_COL).doc(id).set({
     group:g,num:n,kind,title:cleanNick(title).slice(0,60),
     deadline:deadline?deadline+'T23:59':'',
-    candidates:cands,tally:{},voteCount:0,answer:'',closed:false,
+    candidates:cands,tally:{},voteCount:0,pool:0,settled:false,answer:'',closed:false,
     createdAt:Date.now()
   }).then(()=>showMsg('poll-msg','ok','✓ 開好了：'+(GROUP_NAME[g]||g)+' 第'+n+'張 '+
       (kind==='under'?underLabel(g)+' 曲':'表題曲')+'，候選 '+cands.length+' 人。',true))
@@ -1862,7 +2089,7 @@ try{
     firebaseAuth=firebase.auth();
     firebaseAuth.setPersistence(firebase.auth.Auth.Persistence.LOCAL).catch(()=>{});
     firebaseAuth.onAuthStateChanged(u=>{
-      authUser=u||null; authReady=true; applyAuthUI();
+      authUser=u||null; authReady=true; applyAuthUI(); watchWallet();
       // 登入後才執行需要寫入的維護工作
       if(canEdit())['nogi','hinata','sakura','keyaki','aoba'].forEach(g=>{sweepTrash(g);repairNames(g);backfillRows(g);});
       if(canEdit())migrateMemberOverrides();
