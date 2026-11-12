@@ -3535,6 +3535,11 @@ function openMemberPanel(g,name){
       infoEl.appendChild(r);
     };
     infoRow('生日',fmtDate(info.bday)+(age!==null?' （'+age+'歲）':''));
+    // 出身地／身高／血型目前只有現役成員有（來源是坂道成員一覽表），
+    // 沒有資料的就不列，不要留一排空白
+    if(info.home)infoRow('出身地',info.home);
+    if(info.ht)infoRow('身高',info.ht+' cm');
+    if(info.blood)infoRow('血型',info.blood+' 型');
     infoRow('入團日期',fmtDate(info.joined));
     if(info.grad)infoRow('畢業日期',fmtDate(info.grad));
     if(tenure!==null)infoRow(info.grad?'在團期間':'在團年數',tenure+'年');
