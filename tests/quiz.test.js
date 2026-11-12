@@ -55,7 +55,22 @@ const S=suite('冷知識測驗與開盤台');
       fukujin:has(/福神/).length,
       gen:has(/第幾期/).length,
       sameGen:has(/同期/).length,
-      bday:has(/哪一年出生/).length,
+      bdayYear:has(/哪一年出生/).length,
+      age:has(/最年長的是誰|最年輕的是誰/).length,
+      // 年齡題：正解要真的是四人中最年長／最年輕，而且跟第二名差半年以上
+      ageOk:(()=>{
+        const qs=has(/最年長的是誰|最年輕的是誰/);
+        return qs.every(q=>{
+          const oldest=/最年長/.test(q.q);
+          let info=null;
+          ALL_GROUPS.forEach(g=>{const a=getAllMembers(g);
+            if(q.options.every(o=>a[o]&&a[o].bday))info=a;});
+          if(!info)return false;
+          const ds=q.options.map(o=>info[o].bday).sort();
+          const a=oldest?ds[0]:ds[3], b=oldest?ds[1]:ds[2];
+          return info[q.answer].bday===a
+              && Math.abs(new Date(a)-new Date(b))>=180*864e5;
+        });})(),
       joined:has(/哪一年加入/).length,
       grad:has(/哪一年.*畢業/).length,
       tenure:has(/待得最久/).length,
@@ -89,10 +104,14 @@ const S=suite('冷知識測驗與開盤台');
   S.chk('拿掉了「福神人數」', K.fukujin===0, K.fukujin);
   S.chk('center 題一定列出日文曲名（只給編號猜不到）',
         K.centerQ>0&&K.noTitle===0, K.centerQ+' 題、沒曲名的 '+K.noTitle);
-  [['期別',K.gen],['同期',K.sameGen],['生日年份',K.bday],
-   ['入團年份',K.joined],['畢業年份',K.grad],['在籍最久',K.tenure]]
+  [['期別',K.gen],['同期',K.sameGen],['年齡（誰最年長／最年輕）',K.age],
+   ['入團年份',K.joined],['畢業年份',K.grad]]
     .forEach(([n,v])=>S.chk('出得到「'+n+'」題', v>0, v));
   S.chk('同期題的正解真的同期', K.sameGenOk);
+  S.chk('拿掉了「哪一年出生」（改問誰最年長／最年輕）',
+        K.bdayYear===0, K.bdayYear);
+  S.chk('拿掉了「在籍最久」（太難）', K.tenure===0, K.tenure);
+  S.chk('年齡題的正解真的最年長／最年輕，且跟第二名差半年以上', K.ageOk);
   S.chk('同期題的干擾選項都不同期', K.sameGenDistract);
 
   // ── 出身地與身高（資料來自現役成員名冊）──
