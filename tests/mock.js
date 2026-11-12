@@ -100,14 +100,16 @@
       store.__users=store.__users||{};
       const uid='u-'+Object.keys(store.__users).length+'-'+email.slice(1,7);
       store.__users[email]={pw,uid};
-      const u={uid,email,isAnonymous:false,displayName:null};
+      const u={uid,email,isAnonymous:false,displayName:null,
+        updateProfile(pr){this.displayName=pr.displayName;
+          store.__users[email].name=pr.displayName;return Promise.resolve();}};
       auth.currentUser=u; if(authCb)authCb(u);
       return Promise.resolve({user:u});
     },
     signInWithEmailAndPassword(email,pw){
       const r=store.__users&&store.__users[email];
       if(!r||r.pw!==pw)return Promise.reject({code:'auth/invalid-credential'});
-      const u={uid:r.uid,email,isAnonymous:false,displayName:null};
+      const u={uid:r.uid,email,isAnonymous:false,displayName:r.name||null};
       auth.currentUser=u; if(authCb)authCb(u);
       return Promise.resolve({user:u});
     },

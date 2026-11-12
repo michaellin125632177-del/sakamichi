@@ -84,10 +84,12 @@ const seedSingles=p=>p.evaluate(async()=>{
   await p.click('#poll-btn'); await p.waitForTimeout(600);
   S.chk('沒登入就先擋下來', (await p.locator('#lg-id').count())===1);
   S.chk('沒登入看不到下注選單', (await p.locator('#pv-sel-'+PID).count())===0);
-  S.chk('有寫明不用 email',
-        (await p.locator('#poll-list').textContent()).includes('不需要 email'));
-  S.chk('有警告密碼救不回來',
-        (await p.locator('.lg-warn').textContent()).includes('救不回來'));
+  S.chk('說明只留一句',
+        (await p.locator('.lg-note').textContent()).trim()==='取一組只有你知道的 ID 與密碼。',
+        await p.locator('.lg-note').textContent());
+  S.chk('警告寫 ID 跟密碼都救不回來',
+        (await p.locator('.lg-warn').textContent()).includes('ID 跟密碼忘了救不回來'),
+        await p.locator('.lg-warn').textContent());
 
   await p.fill('#lg-id','坂道老司機'); await p.fill('#lg-pw','hunter22');
   await p.click('.lg-row .pg-btn'); await p.waitForTimeout(1600);
@@ -99,6 +101,23 @@ const seedSingles=p=>p.evaluate(async()=>{
   S.chk('這是正式帳號不是匿名', W.anon===false);
   S.chk('看得到餘額列', (await p.locator('.wl-coin').textContent()).includes('1,000'),
         await p.locator('.wl-coin').textContent());
+
+  // 內部信箱是 ID 雜湊出來的，不該出現在任何地方
+  const NM=await p.evaluate(()=>({
+    name:playerName(),
+    btn:document.getElementById('auth-btn').textContent,
+    title:document.getElementById('auth-btn').title,
+    body:document.body.innerText,
+    email:authUser.email}));
+  S.chk('顯示名就是玩家取的 ID', NM.name==='坂道老司機', NM.name);
+  S.chk('右上角按鈕顯示名字，不是雜湊信箱',
+        NM.btn.includes('坂道老司機')&&!/u[0-9a-f]{8}/.test(NM.btn), NM.btn);
+  S.chk('按鈕提示也不露出信箱', !/@users\./.test(NM.title), NM.title);
+  S.chk('整個畫面都看不到內部信箱',
+        !NM.body.includes(NM.email)&&!/@users\.sakamichidb/.test(NM.body),
+        NM.body.slice(0,60));
+  S.chk('錢包列顯示名字', (await p.locator('.wl-name').textContent()).includes('坂道老司機'),
+        await p.locator('.wl-name').textContent());
   S.chk('登入後出現下注選單', (await p.locator('#pv-sel-'+PID).count())===1);
 
   // 下注前看不到票數
@@ -147,6 +166,8 @@ const seedSingles=p=>p.evaluate(async()=>{
   await p.click('.lg-row .btn-save'); await p.waitForTimeout(1600);
   S.chk('重新登入籌碼還在', await p.evaluate(()=>myWallet&&myWallet.balance===700),
         await p.evaluate(()=>myWallet&&myWallet.balance));
+  S.chk('重新登入名字也還在', await p.evaluate(()=>playerName())==='坂道老司機',
+        await p.evaluate(()=>playerName()));
   const bad=await p.evaluate(async()=>{
     try{await loginPlayer('坂道老司機','wrongpass');return 'should-not-pass';}
     catch(e){return e.message;}});
