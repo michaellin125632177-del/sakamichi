@@ -537,6 +537,7 @@ body.is-guest .edit-only{display:none!important;}
 .poll-state{font-size:.68rem;padding:2px 9px;border-radius:9px;
   border:1px solid #4a2d7a;color:#7c5cb0;white-space:nowrap;}
 .poll-state.is-open{border-color:#f59e0b;color:#fcd34d;background:rgba(245,158,11,.12);}
+.poll-who{font-size:.78rem;color:#c084fc;font-weight:600;margin:2px 0 4px;}
 .poll-meta{font-size:.72rem;color:#7c5cb0;margin-bottom:9px;}
 .poll-ans{font-size:.82rem;color:#fcd34d;background:rgba(245,158,11,.1);
   border:1px solid rgba(245,158,11,.35);border-radius:8px;padding:7px 10px;margin-bottom:9px;}
@@ -1421,7 +1422,14 @@ const NICK_KEY='sakamichi-nick';
 const NICK_MAX=16;
 let pollData=[], pollReady=false, myVotes={};   // pollId -> {pick,nick}
 
-function pollId(g,num){return g+'_'+num;}
+const GROUP_NAME={nogi:'乃木坂46',hinata:'日向坂46',sakura:'櫻坂46',
+                  keyaki:'欅坂46',aoba:'青葉坂46'};
+// 舊的預測沒有 kind 欄位，一律當成表題曲；id 也維持原本的格式，不會對不上
+function pollKind(p){return p&&p.kind==='under'?'under':'sel';}
+function pollId(g,num,kind){return g+'_'+num+(kind==='under'?'_under':'');}
+function pollKindLabel(p){
+  return pollKind(p)==='under'?(underLabel(p.group)+' 曲'):'表題曲';
+}
 function voteId(pid,uid){return pid+'_'+uid;}
 
 // 暱稱：訪客自己取，存在這台裝置上，投票時一起寫進票裡
@@ -1447,8 +1455,12 @@ function pollOpen(p){
 function pollAnswer(p){
   if(p.answer)return p.answer;
   const d=(getData(p.group)||[]).find(x=>x.num===p.num);
-  const c=d&&d.center&&d.center.length?d.center:null;
-  return c?c.join('、'):null;
+  if(!d)return null;
+  // 表題曲直接看 center；Under 曲沒有 center 欄位，取站位前排正中央
+  const c=pollKind(p)==='under'
+    ? centerOfRows(underRowsOf(p.group,d)||[])
+    : (d.center||[]);
+  return c&&c.length?c.join('、'):null;
 }
 function pollTally(p){
   const t=p.tally||{};
@@ -1547,6 +1559,9 @@ function buildPollCard(p){
   head.appendChild(elWith('span','poll-state'+(open?' is-open':''),
     ans?'已開獎':(open?'投票中':'已截止')));
   box.appendChild(head);
+  // 訪客不一定知道現在在投哪個團、哪首歌
+  box.appendChild(elWith('div','poll-who',
+    (GROUP_NAME[p.group]||p.group)+'　·　'+pollKindLabel(p)));
 
   const meta=[];
   if(p.date)meta.push('預計 '+p.date);
@@ -1592,7 +1607,11 @@ function buildVotePicker(p){
   const wrap=elWith('div','poll-pick');
   const sel=document.createElement('select');
   sel.className='pk-name'; sel.id='pv-sel-'+p.id;
-  sel.appendChild(new Option('選擇你覺得會是 C 的成員…',''));
+  // 這個提示留著當欄位的預設文字，但設成 hidden 就不會出現在展開的清單裡。
+  // 完全拿掉的話會預設選中第一位成員，手一滑就送出了——而票是不能改的。
+  const ph=new Option('選擇你覺得會是 C 的成員…','');
+  ph.disabled=true; ph.selected=true; ph.hidden=true;
+  sel.appendChild(ph);
   (p.candidates||[]).forEach(n=>sel.appendChild(new Option(n,n)));
   const btn=document.createElement('button');
   btn.className='btn-save'; btn.textContent='🎯 送出預測'; btn.disabled=true;
@@ -1601,7 +1620,8 @@ function buildVotePicker(p){
     btn.disabled=true; btn.textContent='送出中…';
     try{
       await castVote(p.id,sel.value,document.getElementById('poll-nick').value);
-      showMsg('poll-msg','ok','✓ 預測送出了！現在看得到目前票數。',true);
+      showMsg('poll-msg','ok','✓ 已送出：'+(GROUP_NAME[p.group]||p.group)+
+        ' 第'+p.num+'張 '+pollKindLabel(p)+' → '+sel.value,true);
       buildPollList();
     }catch(e){
       btn.disabled=false; btn.textContent='🎯 送出預測';
@@ -1618,22 +1638,30 @@ function openNewPoll(){
   const g=currentHash();
   const list=getData(g).slice().sort((a,b)=>b.num-a.num);
   const next=(list[0]?list[0].num:0)+1;
-  const num=prompt('要為哪一張單曲開預測？（輸入編號）',String(next));
+  const num=prompt('要為哪一張單曲開預測？（輸入編號）\n團體：'+(GROUP_NAME[g]||g),
+                   String(next));
   if(num===null)return;
   const n=parseInt(num,10);
   if(!n||n<1){showMsg('poll-msg','err','編號看不懂。',false);return;}
-  if(pollData.some(x=>x.group===g&&x.num===n)){
-    showMsg('poll-msg','err','第'+n+'張已經有預測了。',false);return;}
+  // 表題與 Under 各開各的，所以要先問是哪一首
+  const k=prompt('要猜哪一首的 C？\n  1 = 表題曲\n  2 = '+underLabel(g)+' 曲','1');
+  if(k===null)return;
+  const kind=String(k).trim()==='2'?'under':'sel';
+  const id=pollId(g,n,kind);
+  if(pollData.some(x=>x.id===id)){
+    showMsg('poll-msg','err','第'+n+'張的'+(kind==='under'?underLabel(g)+' 曲':'表題曲')+
+            '已經有預測了。',false);return;}
   const title=prompt('曲名（還沒公布可以留空）','')||'';
   const deadline=prompt('投票截止時間（YYYY-MM-DD，留空就不自動截止）','')||'';
   const cands=pollCandidates(g);
   if(!cands.length){showMsg('poll-msg','err','這個團沒有在籍成員可以當候選。',false);return;}
-  db.collection(POLL_COL).doc(pollId(g,n)).set({
-    group:g,num:n,title:cleanNick(title).slice(0,60),
+  db.collection(POLL_COL).doc(id).set({
+    group:g,num:n,kind,title:cleanNick(title).slice(0,60),
     deadline:deadline?deadline+'T23:59':'',
     candidates:cands,tally:{},voteCount:0,answer:'',closed:false,
     createdAt:Date.now()
-  }).then(()=>showMsg('poll-msg','ok','✓ 開好了，候選 '+cands.length+' 人。',true))
+  }).then(()=>showMsg('poll-msg','ok','✓ 開好了：'+(GROUP_NAME[g]||g)+' 第'+n+'張 '+
+      (kind==='under'?underLabel(g)+' 曲':'表題曲')+'，候選 '+cands.length+' 人。',true))
     .catch(e=>showMsg('poll-msg','err','建立失敗：'+e.message,false));
 }
 function togglePollClosed(id,closed){
@@ -1647,7 +1675,8 @@ function deletePoll(id,p){
   if(!canEdit())return;
   if(pollDelStep!==id){
     pollDelStep=id;
-    showMsg('poll-msg','err','再按一次「🗑 刪除」就會刪掉第'+p.num+'張的預測（連同 '+
+    showMsg('poll-msg','err','再按一次「🗑 刪除」就會刪掉 '+(GROUP_NAME[p.group]||p.group)+
+            ' 第'+p.num+'張 '+pollKindLabel(p)+' 的預測（連同 '+
             (p.voteCount||0)+' 張票）。',false);
     setTimeout(()=>{if(pollDelStep===id)pollDelStep='';},4000);
     return;
@@ -2139,7 +2168,9 @@ if(db){
   db.collection(POLL_COL).onSnapshot(snap=>{
     pollData=[];
     snap.forEach(d=>pollData.push({id:d.id,...d.data()}));
-    pollData.sort((a,b)=>(b.num-a.num)||String(a.group).localeCompare(b.group));
+    pollData.sort((a,b)=>(b.num-a.num)
+      ||String(a.group).localeCompare(b.group)
+      ||pollKind(a).localeCompare(pollKind(b)));
     pollReady=true;
     updatePollBadge();
     if(document.getElementById('pollModal').classList.contains('open'))buildPollList();

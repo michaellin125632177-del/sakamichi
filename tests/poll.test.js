@@ -6,9 +6,10 @@ const {launch,openPage,seed,suite,ADMIN_UID}=require('./lib');
 const S=suite('C 位預測');
 
 const mkPoll=(p,o={})=>p.evaluate(async o=>{
-  await db.collection('polls').doc(pollId(o.g||'nogi',o.num||44)).set({
-    group:o.g||'nogi',num:o.num||44,title:o.title||'テスト曲',
-    deadline:o.deadline||'',candidates:o.cands||pollCandidates(o.g||'nogi'),
+  const g=o.g||'nogi', kind=o.kind||'sel';
+  await db.collection('polls').doc(pollId(g,o.num||44,kind)).set({
+    group:g,num:o.num||44,kind,title:o.title||'テスト曲',
+    deadline:o.deadline||'',candidates:o.cands||pollCandidates(g),
     tally:o.tally||{},voteCount:o.voteCount||0,answer:o.answer||'',
     closed:!!o.closed,createdAt:Date.now()});
 },o);
@@ -76,6 +77,17 @@ const mkPoll=(p,o={})=>p.evaluate(async o=>{
   S.chk('視窗打得開', (await p.locator('#pollModal.open').count())===1);
   S.chk('投票前看不到票數', (await p.locator('.pv').count())===0);
   S.chk('投票前有候選下拉', (await p.locator('#pv-sel-nogi_44').count())===1);
+  const PH=await p.evaluate(()=>{
+    const o=document.querySelector('#pv-sel-nogi_44 option');
+    return {hidden:o.hidden,disabled:o.disabled,value:o.value,
+            selected:document.querySelector('#pv-sel-nogi_44').value};
+  });
+  S.chk('提示選項不出現在展開的清單裡', PH.hidden===true);
+  S.chk('提示選項選不到', PH.disabled===true);
+  S.chk('一開始沒有預設選中任何成員（免得手滑送出不能改的票）',
+        PH.selected==='', JSON.stringify(PH.selected));
+  S.chk('沒選人時送出鈕是關的',
+        await p.evaluate(()=>document.querySelector('.poll-pick .btn-save').disabled));
   S.chk('下拉不含已畢業成員',
         !(await p.locator('#pv-sel-nogi_44').allTextContents())[0].includes('白石麻衣'));
 
@@ -145,6 +157,56 @@ const mkPoll=(p,o={})=>p.evaluate(async o=>{
   const txt=await p.locator('#poll-list').textContent();
   S.chk('畫面顯示答案', txt.includes('答案')&&txt.includes('賀喜遥香'));
   S.chk('猜中會講出來', txt.includes('猜中'), txt.slice(0,120));
+
+  // ── 表題曲與 Under 曲各開各的 ──
+  const K=await p.evaluate(()=>({
+    selId:pollId('nogi',50,'sel'), underId:pollId('nogi',50,'under'),
+    oldId:pollId('nogi',50),
+    selKind:pollKind({kind:'sel'}), underKind:pollKind({kind:'under'}),
+    legacy:pollKind({num:1}),
+    selLabel:pollKindLabel({group:'nogi',kind:'sel'}),
+    underNogi:pollKindLabel({group:'nogi',kind:'under'}),
+    underHinata:pollKindLabel({group:'hinata',kind:'under'}),
+    underSakura:pollKindLabel({group:'sakura',kind:'under'})
+  }));
+  S.chk('表題與 Under 的 id 不一樣（同一張才能各開一個）',
+        K.selId!==K.underId, K.selId+' vs '+K.underId);
+  S.chk('表題沿用舊的 id 格式（舊預測不會對不上）',
+        K.selId===K.oldId&&K.selId==='nogi_50', K.selId);
+  S.chk('沒有 kind 的舊預測當成表題曲', K.legacy==='sel', K.legacy);
+  S.chk('表題曲的標籤', K.selLabel==='表題曲', K.selLabel);
+  S.chk('乃木坂的 Under 叫 under 曲', K.underNogi==='under 曲', K.underNogi);
+  S.chk('日向坂的 Under 叫ひなた坂', K.underHinata==='ひなた坂 曲', K.underHinata);
+  S.chk('櫻坂的 Under 叫 BACKS', K.underSakura==='BACKS 曲', K.underSakura);
+
+  await mkPoll(p,{num:50,kind:'sel',title:'表題テスト'});
+  await mkPoll(p,{num:50,kind:'under',title:'アンダーテスト'});
+  await p.waitForTimeout(1000);
+  await p.evaluate(()=>buildPollList()); await p.waitForTimeout(400);
+  const both=await p.evaluate(()=>[...document.querySelectorAll('.poll-card')]
+    .filter(c=>c.textContent.includes('第50張'))
+    .map(c=>c.querySelector('.poll-who').textContent));
+  S.chk('同一張單曲可以同時有兩個預測', both.length===2, both.length);
+  S.chk('兩張卡分別標示表題與 Under',
+        both.some(t=>t.includes('表題曲'))&&both.some(t=>t.includes('under 曲')),
+        both.join(' | '));
+  S.chk('卡片上看得到團名', both.every(t=>t.includes('乃木坂46')), both.join(' | '));
+
+  // Under 的答案取 under 站位前排正中央，不是單曲的 center
+  const UA=await p.evaluate(async()=>{
+    await db.collection('nogi').doc('50').set(toDoc({
+      num:50,title:'表題テスト',zh:'測試',date:'2027年6月1日',total:3,
+      center:['井上和'],rows:[[],[],['賀喜遥香','井上和','遠藤さくら']],
+      underRows:[[],[],['岩本蓮加','伊藤理々杏','弓木奈於']]}));
+    return true;
+  });
+  await p.waitForTimeout(1200);
+  const UA2=await p.evaluate(()=>({
+    sel:pollAnswer(pollData.find(x=>x.id==='nogi_50')),
+    under:pollAnswer(pollData.find(x=>x.id==='nogi_50_under'))}));
+  S.chk('表題的答案是單曲的 center', UA2.sel==='井上和', UA2.sel);
+  S.chk('Under 的答案取 under 站位的正中央，不是 center',
+        UA2.under==='伊藤理々杏', UA2.under);
 
   // ── 不把暱稱當 HTML ──
   await p.evaluate(async()=>{
