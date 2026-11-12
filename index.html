@@ -1709,6 +1709,38 @@ const QUIZ_MAKERS=[
     const n=pick(names); if(!n)return null;
     const pool=[...new Set(names.map(x=>all[x].home))];
     return mkQ(n+' 的出身地是哪裡？', all[n].home, pool);},
+  // 哪兩位同鄉。正解是同一個都道府縣的兩人；其他三組一定要跨縣，
+  // 而且八個人都不重複，否則會冒出第二個正確答案。
+  g=>{const all=getAllMembers(g);
+    const names=Object.keys(all).filter(n=>all[n].home);
+    if(names.length<8)return null;
+    const byHome={};
+    names.forEach(n=>{(byHome[all[n].home]=byHome[all[n].home]||[]).push(n);});
+    const same=Object.values(byHome).filter(v=>v.length>=2);
+    if(!same.length)return null;
+    const two=shuffle(pick(same)).slice(0,2);
+    const used=new Set(two);
+    const rest=shuffle(names.filter(n=>!used.has(n)));
+    const wrong=[];
+    for(const a of rest){
+      if(wrong.length>=3)break;
+      if(used.has(a))continue;
+      const b=rest.find(x=>!used.has(x)&&x!==a&&all[x].home!==all[a].home);
+      if(!b)continue;
+      used.add(a); used.add(b);
+      wrong.push(a+'、'+b);
+    }
+    if(wrong.length<3)return null;
+    const ans=two[0]+'、'+two[1];
+    return {q:'下面哪兩位 '+(GROUP_NAME[g]||g)+' 成員出身於同一個都道府縣？',
+      answer:ans, options:shuffle([ans,...wrong])};},
+  // 幾月出生。12 選 4，比問哪一年好猜，干擾選項直接用 12 個月
+  g=>{const all=getAllMembers(g);
+    const names=Object.keys(all).filter(n=>all[n].bday);
+    const n=pick(names); if(!n)return null;
+    const mon=d=>parseInt(d.slice(5,7),10)+' 月';
+    return mkQ(n+' 是幾月出生的？', mon(all[n].bday),
+      Array.from({length:12},(_,i)=>(i+1)+' 月'));},
   // 身高：問「誰最高」比問幾公分好猜。四個人身高差太近等於擲骰子，
   // 所以要求最高的至少高第二名 2cm，抽不到就換一組。
   g=>{const all=getAllMembers(g);
