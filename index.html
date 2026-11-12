@@ -639,6 +639,9 @@ body.is-guest .edit-only{display:none!important;}
 .bl-me{background:rgba(252,211,77,.09);}
 .bl-me .bl-name{color:#fcd34d;font-weight:700;}
 .ph-note{color:#7e62a8;font-size:.71rem;margin-top:7px;}
+.settle-todo{margin:8px 0;padding:9px 11px;border-radius:9px;font-size:.79rem;
+  color:#fcd34d;background:rgba(252,211,77,.1);border:1px solid #7a5a12;
+  line-height:1.5;}
 @media(max-width:480px){
   .bl-row{font-size:.75rem;}
   .bl-sub{width:100%;padding-left:2.9em;}
@@ -2059,6 +2062,14 @@ function buildPollList(){
   host.appendChild(buildPollTabs());
   if(pollTab==='quiz'){host.appendChild(buildQuizBox());return;}
   if(!pollReady){host.appendChild(elWith('div','poll-empty','載入中…'));return;}
+  // 已開獎卻還沒發錢的，直接在最上面提醒站長一次
+  if(canEdit()){
+    const todo=pollData.filter(needsSettle);
+    if(todo.length)host.appendChild(elWith('div','settle-todo',
+      '💰 有 '+todo.length+' 場已開獎但還沒發錢（'+
+      todo.map(x=>'第'+x.num+'張').join('、')+
+      '）。往下到「📊 歷來預測結果」按「結算發錢」。'));
+  }
   if(canEdit()&&newPollOpen)host.appendChild(buildNewPollForm());
   if(!pollData.length){
     host.appendChild(elWith('div','poll-empty',
@@ -2406,6 +2417,7 @@ function betRanking(){
 const BL_TOP=10;
 function buildRanking(){
   const box=elWith('details','ph-box');
+  box.open=true;          // 預設展開：收起來的東西沒有人找得到
   const sm=document.createElement('summary');
   sm.textContent='💰 賭盤排行榜';
   box.appendChild(sm);
@@ -2446,8 +2458,13 @@ function buildRanking(){
     '淨賺＝派彩 − 押注，只算賭盤，不含測驗獎金。'));
   return box;
 }
+// 已開獎、有彩池、但還沒發錢——站長要按結算的就是這些
+function needsSettle(p){
+  return !!pollAnswer(p)&&!p.settled&&(p.pool||0)>0;
+}
 function buildHistory(){
   const box=elWith('details','ph-box');
+  box.open=true;          // 預設展開
   const sm=document.createElement('summary');
   sm.textContent='📊 歷來預測結果';
   box.appendChild(sm);
@@ -2472,6 +2489,8 @@ function buildHistory(){
   list.forEach(p=>{
     const ans=pollAnswer(p), c=crowdPick(p), mine=myVoteOn(p.id);
     const row=elWith('details','ph-row');
+    // 站長有錢要發的那一列直接攤開，不然結算按鈕埋在兩層收合裡面
+    if(canEdit()&&needsSettle(p))row.open=true;
     const s2=document.createElement('summary');
     s2.append(
       elWith('span','ph-num','第'+p.num+'張'),
