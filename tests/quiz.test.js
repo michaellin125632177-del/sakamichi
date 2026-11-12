@@ -154,6 +154,45 @@ const S=suite('冷知識測驗與開盤台');
   S.chk('最高的跟第二名至少差 2cm（不然等於擲骰子）', H.tallGap);
   S.chk('沒登記身高的人不會被抽進選項', H.tallAllHave);
 
+  // ── 同鄉題與月份題 ──
+  const M=await p.evaluate(()=>{
+    const all=[];
+    for(let i=0;i<40;i++)all.push(...buildQuiz());
+    const pairQ=all.filter(q=>/出身於同一個都道府縣/.test(q.q));
+    const monQ=all.filter(q=>/是幾月出生的/.test(q.q));
+    const look=n=>{let r=null;ALL_GROUPS.forEach(g=>{
+      const a=getAllMembers(g); if(a[n]&&(a[n].home||a[n].bday))r=a[n];});return r;};
+    const homes=o=>o.split('、').map(n=>(look(n)||{}).home);
+    return {
+      pairN:pairQ.length, monN:monQ.length,
+      // 正解那一組真的同縣
+      pairOk:pairQ.every(q=>{const h=homes(q.answer);
+        return h.length===2&&h[0]&&h[0]===h[1];}),
+      // 其他三組一定不同縣，否則會有兩個正確答案
+      pairWrongOk:pairQ.every(q=>q.options.filter(o=>o!==q.answer).every(o=>{
+        const h=homes(o); return h.length===2&&h[0]&&h[1]&&h[0]!==h[1];})),
+      // 八個人不重複
+      pairDistinct:pairQ.every(q=>{
+        const ns=q.options.flatMap(o=>o.split('、'));
+        return ns.length===8&&new Set(ns).size===8;}),
+      // 月份：正解跟名冊一致、四個選項都是「N 月」且不重複
+      monOk:monQ.every(q=>{
+        const m=/^(.+?) 是幾月出生/.exec(q.q); if(!m)return false;
+        const info=look(m[1]);
+        return info&&info.bday&&
+               (parseInt(info.bday.slice(5,7),10)+' 月')===q.answer;}),
+      monFmt:monQ.every(q=>new Set(q.options).size===4
+               &&q.options.every(o=>/^([1-9]|1[0-2]) 月$/.test(o)))
+    };
+  });
+  S.chk('出得到「哪兩位同鄉」題', M.pairN>0, M.pairN);
+  S.chk('同鄉題的正解兩人真的同縣', M.pairOk);
+  S.chk('其他三組都是跨縣（不會有第二個正解）', M.pairWrongOk);
+  S.chk('同鄉題的八個人不重複', M.pairDistinct);
+  S.chk('出得到「幾月出生」題', M.monN>0, M.monN);
+  S.chk('月份的正解跟名冊一致', M.monOk);
+  S.chk('月份選項是 1～12 月且不重複', M.monFmt);
+
   // ── 答題與獎金 ──
   await p.click('#poll-btn'); await p.waitForTimeout(500);
   await p.evaluate(()=>setPollTab('quiz')); await p.waitForTimeout(400);
