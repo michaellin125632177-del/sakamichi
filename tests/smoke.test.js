@@ -79,6 +79,28 @@ const S=suite('整體煙霧測試');
   S.chk('成員面板打得開', (await p.locator('#member-panel.open').count())===1);
   S.chk('成員面板有生涯圖', (await p.locator('#member-panel svg').count())>0);
   S.chk('成員面板有基本資料', (await p.locator('#member-panel .mp-row').count())>0);
+  // 現役成員要看得到出身地／身高／血型；沒有這些資料的人不該出現空白列
+  const MP=await p.evaluate(()=>{
+    const read=()=>[...document.querySelectorAll('#member-panel .mp-row')]
+      .map(r=>r.querySelector('.mp-lbl').textContent+'='+
+              r.querySelector('.mp-val').textContent);
+    openMemberPanel('nogi','井上和');
+    const cur=read();
+    openMemberPanel('nogi','秋元真夏');       // 已畢業，沒有這三筆資料
+    const old=read();
+    return {cur,old};
+  });
+  S.chk('現役成員看得到出身地',
+        MP.cur.some(x=>x==='出身地=神奈川県'), MP.cur.join(' / '));
+  S.chk('現役成員看得到身高', MP.cur.some(x=>x==='身高=158 cm'), MP.cur.join(' / '));
+  S.chk('現役成員看得到血型', MP.cur.some(x=>x==='血型=B 型'), MP.cur.join(' / '));
+  S.chk('三列排在生日後面、入團日期前面',
+        MP.cur.findIndex(x=>x.startsWith('生日'))
+          <MP.cur.findIndex(x=>x.startsWith('出身地'))
+        &&MP.cur.findIndex(x=>x.startsWith('血型'))
+          <MP.cur.findIndex(x=>x.startsWith('入團日期')), MP.cur.join(' / '));
+  S.chk('沒有這些資料的人不會多出空白列',
+        !MP.old.some(x=>/^(出身地|身高|血型)=/.test(x)), MP.old.join(' / '));
 
   await b.close();
   const r=S.report();
