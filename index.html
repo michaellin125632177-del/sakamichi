@@ -980,6 +980,25 @@ body.is-guest .edit-only{display:none!important;}
       <input type="date" id="me-bday">
     </div>
     <div class="me-field">
+      <label>出身地 <span style="font-weight:400;color:#5a4070;">（可留空）</span></label>
+      <input type="text" id="me-home" placeholder="例：神奈川県">
+    </div>
+    <div class="me-field">
+      <label>身高 <span style="font-weight:400;color:#5a4070;">（公分，可留空）</span></label>
+      <input type="number" id="me-ht" min="100" max="220" step="0.1" placeholder="例：158">
+    </div>
+    <div class="me-field">
+      <label>血型 <span style="font-weight:400;color:#5a4070;">（可留空）</span></label>
+      <select id="me-blood">
+        <option value="">（不填）</option>
+        <option value="A">A 型</option>
+        <option value="B">B 型</option>
+        <option value="O">O 型</option>
+        <option value="AB">AB 型</option>
+      </select>
+      <div class="me-hint">這三欄留空的話，成員面板就不會出現那一列</div>
+    </div>
+    <div class="me-field">
       <label>入團日期</label>
       <input type="date" id="me-joined">
     </div>
@@ -3318,6 +3337,9 @@ function openAddMember(){
   document.getElementById('me-name').value='';
   document.getElementById('me-name').readOnly=false;
   document.getElementById('me-bday').value='';
+  document.getElementById('me-home').value='';
+  document.getElementById('me-ht').value='';
+  document.getElementById('me-blood').value='';
   document.getElementById('me-joined').value='';
   document.getElementById('me-gen').value='1';
   document.getElementById('me-grad').value='';
@@ -3335,6 +3357,9 @@ function openMemberEdit(g,name){
   document.getElementById('me-name').value=name;
   document.getElementById('me-name').readOnly=true;
   document.getElementById('me-bday').value=info.bday||'';
+  document.getElementById('me-home').value=info.home||'';
+  document.getElementById('me-ht').value=info.ht||'';
+  document.getElementById('me-blood').value=info.blood||'';
   document.getElementById('me-joined').value=info.joined||'';
   document.getElementById('me-gen').value=String(info.gen||1);
   document.getElementById('me-grad').value=info.grad||'';
@@ -3347,16 +3372,24 @@ function saveMemEdit(){
   const g=meState.mode==='add'?document.getElementById('me-group').value:meState.g;
   const name=meState.mode==='add'?document.getElementById('me-name').value.trim():meState.name;
   if(!name){alert('請輸入成員姓名');return;}
+  const ht=parseFloat(document.getElementById('me-ht').value);
   const data={
     bday:document.getElementById('me-bday').value||undefined,
+    home:document.getElementById('me-home').value.trim()||undefined,
+    ht:isNaN(ht)?undefined:ht,
+    blood:document.getElementById('me-blood').value||undefined,
     joined:document.getElementById('me-joined').value||undefined,
     gen:parseInt(document.getElementById('me-gen').value)||1,
     grad:document.getElementById('me-grad').value||undefined,
     ig:normalizeIg(document.getElementById('me-ig').value)||undefined,
   };
   Object.keys(data).forEach(k=>data[k]===undefined&&delete data[k]);
-  // 內建名冊本身就帶帳號時，清空欄位得寫入空字串才蓋得掉（undefined 會被忽略）
-  if(data.ig===undefined&&((memberDB[g]||{})[name]||{}).ig)data.ig='';
+  // 內建名冊本身就有值時，清空欄位得寫入空值才蓋得掉（undefined 會被忽略）
+  const base=(memberDB[g]||{})[name]||{};
+  if(data.ig===undefined&&base.ig)data.ig='';
+  if(data.home===undefined&&base.home)data.home='';
+  if(data.blood===undefined&&base.blood)data.blood='';
+  if(data.ht===undefined&&base.ht)data.ht=0;
   saveMemberDoc(g,name,data)
     .then(()=>{closeModal('memberEditModal');onMembersChanged();})
     .catch(e=>alert('儲存失敗：'+e.message));
