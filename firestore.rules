@@ -38,19 +38,38 @@ service cloud.firestore {
         && d.pick in get(/databases/$(database)/documents/polls/$(d.pollId)).data.candidates;
     }
 
+    // 「今天」一定要由伺服器時間算，不能信前端寫進來的字串。
+    // 舊版只檢查「跟上次記的日期不同」，那等於每次換一個新字串就能再領
+    // 一次，上限形同虛設。request.time 是伺服器時間（UTC），加 8 小時
+    // 換成台灣時間，跟前端的 today() 用同一套算法。
+    function twDay() {
+      let t = request.time + duration.value(8, 'h');
+      return string(t.year()) + '-'
+           + (t.month() < 10 ? '0' : '') + string(t.month()) + '-'
+           + (t.day() < 10 ? '0' : '') + string(t.day());
+    }
+
     // 測驗分數是在瀏覽器算的，規則沒辦法驗「你真的答對幾題」。
-    // 所以這裡能保證的只有：一天一次、一次最多 100。擋不住有人宣稱滿分，
-    // 但擋得住他把自己變成一億。這是這個設計已知的上限。
+    // 所以這裡能保證的只有：一天最多領 3 次、每次最多 100、一天總共不超過
+    // 300。擋不住有人宣稱滿分，但擋得住他把自己變成一億。
     function isQuizClaim() {
       let d = request.resource.data;
       let old = resource.data;
-      return d.diff(old).affectedKeys().hasOnly(['balance', 'quizDay', 'quizGain'])
-          && d.quizDay is string
-          && old.get('quizDay', '') != d.quizDay      // 同一天只能領一次
+      let day = twDay();
+      let first = old.get('quizDay', '') != day;   // 今天的第一次
+      let gain = d.balance - old.balance;
+      return d.diff(old).affectedKeys()
+               .hasOnly(['balance', 'quizDay', 'quizGain', 'quizCount'])
+          && d.quizDay == day                      // 只能寫伺服器當下的日期
+          && d.balance is int
+          && gain > 0
+          && gain <= 100                           // 單次上限
+          && d.quizCount is int
+          && d.quizCount == (first ? 1 : old.get('quizCount', 0) + 1)
+          && d.quizCount <= 3                      // 一天三次
           && d.quizGain is int
-          && d.quizGain > 0
-          && d.quizGain <= 100
-          && d.balance == old.balance + d.quizGain;
+          && d.quizGain == (first ? gain : old.get('quizGain', 0) + gain)
+          && d.quizGain <= 300;                    // 一天總額
     }
 
     function isBetDeduction(uid) {
@@ -145,7 +164,7 @@ service cloud.firestore {
         && request.resource.data.balance == 1000
         && request.resource.data.name is string
         && request.resource.data.name.size() <= 16;
-      // 本人只能做兩件事：扣掉剛剛那張注單的金額，或領一次測驗獎金
+      // 本人只能做兩件事：扣掉剛剛那張注單的金額，或領測驗獎金（一天三次）
       allow update: if request.auth != null
         && request.auth.uid == uid
         && (isBetDeduction(uid) || isQuizClaim());
