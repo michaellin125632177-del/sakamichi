@@ -560,19 +560,38 @@ body.is-guest .edit-only{display:none!important;}
 .pv-fill{height:100%;background:#9333ea;border-radius:5px;}
 .pv-fill.is-ans{background:#f59e0b;}
 .pv-n{width:3.6em;text-align:right;color:#9370c0;flex-shrink:0;}
-/* 歷來得票排行 */
-.pr-box{margin-top:4px;border:1px solid #2a1250;border-radius:10px;
+/* 歷來預測結果 */
+.ph-box{margin-top:4px;border:1px solid #2a1250;border-radius:10px;
   padding:9px 11px;background:rgba(255,255,255,.015);}
-.pr-box summary{cursor:pointer;font-size:.82rem;color:#c084fc;font-weight:600;
+.ph-box summary{cursor:pointer;font-size:.82rem;color:#c084fc;font-weight:600;
   list-style:none;}
-.pr-box summary::-webkit-details-marker{display:none;}
-.pr-box summary::before{content:'▸ ';}
-.pr-box[open] summary::before{content:'▾ ';}
-.pr-box[open] summary{margin-bottom:9px;}
-.pr-row{display:flex;align-items:center;gap:7px;font-size:.78rem;}
-.pr-pos{width:1.7em;text-align:center;color:#9370c0;flex-shrink:0;}
-.pr-bar{width:3px;height:15px;border-radius:2px;flex-shrink:0;}
-.pr-hit{width:3.4em;text-align:right;color:#fcd34d;flex-shrink:0;font-size:.72rem;}
+.ph-box summary::-webkit-details-marker{display:none;}
+.ph-box>summary::before{content:'▸ ';}
+.ph-box[open]>summary::before{content:'▾ ';}
+.ph-box[open]>summary{margin-bottom:9px;}
+.ph-stat{display:flex;flex-wrap:wrap;gap:6px 14px;font-size:.76rem;
+  padding:7px 9px;margin-bottom:9px;border-radius:8px;
+  background:rgba(168,85,247,.08);border:1px solid #3a2060;}
+.ph-stat-n{color:#9370c0;}
+.ph-stat-s{color:#e9d5ff;font-weight:700;}
+.ph-stat-me{color:#fcd34d;font-weight:700;}
+.ph-row{border-top:1px solid rgba(255,255,255,.05);padding:6px 0;}
+.ph-row>summary{display:flex;flex-wrap:wrap;align-items:center;gap:5px 10px;
+  font-size:.76rem;font-weight:400;color:#c4b5fd;}
+.ph-row>summary::before{content:'';}
+.ph-num{color:#e9d5ff;font-weight:700;}
+.ph-song{color:#d8c7f5;overflow:hidden;text-overflow:ellipsis;
+  white-space:nowrap;max-width:11em;}
+.ph-kind{color:#7c5cb0;font-size:.72rem;}
+.ph-crowd{color:#c4b5fd;}
+.ph-ans{color:#fcd34d;}
+.ph-wait{color:#7c5cb0;}
+.ph-mark{color:#fca5a5;font-weight:700;}
+.ph-mark.is-hit{color:#86efac;}
+.ph-mine{color:#9370c0;border:1px solid #3a2060;border-radius:9px;padding:1px 7px;
+  font-size:.72rem;}
+.ph-mine.is-hit{color:#86efac;border-color:#166534;background:rgba(34,197,94,.1);}
+.ph-row .pv{margin:7px 0 4px;}
 
 /* ══════════════════════════════════════════
    手機版的可讀性與可點性
@@ -608,7 +627,8 @@ body.is-guest .edit-only{display:none!important;}
 
   /* ── 觸控目標 ── */
   .poll-pick select{min-height:38px;font-size:.86rem;}
-  .pv-row,.pr-row{font-size:.82rem;}
+  .pv-row{font-size:.82rem;}
+  .ph-row>summary{font-size:.8rem;}
   .fm-pick{font-size:.76rem;min-height:34px;padding-top:6px;padding-bottom:6px;}
   .card-share,.card-edit-btn{min-height:36px;padding:7px 14px;font-size:.8rem;}
   .pg-btn{min-height:36px;min-width:36px;}
@@ -1582,10 +1602,13 @@ function buildPollList(){
     host.appendChild(elWith('div','poll-empty',
       canEdit()?'還沒有任何預測。按下面的「＋ 開一個新預測」建立。'
                :'目前沒有進行中的預測，下一張單曲公布時再來看看。'));
-    return;   // 沒有預測就沒有票可以統計，排行也跟著省略
+    return;   // 一個預測都沒有，歷來結果也沒東西可放
   }
-  pollData.forEach(p=>host.appendChild(buildPollCard(p)));
-  host.appendChild(buildVoteRanking());
+  const live=pollData.filter(pollOpen);
+  if(live.length)live.forEach(p=>host.appendChild(buildPollCard(p)));
+  else host.appendChild(elWith('div','poll-empty',
+    '目前沒有進行中的預測，下一張單曲公布時再來看看。'));
+  host.appendChild(buildHistory());
 }
 function buildPollCard(p){
   const box=elWith('div','poll-card');
@@ -1669,71 +1692,90 @@ function buildVotePicker(p){
   return wrap;
 }
 
-// ── 歷來得票排行（投票參考用）──
-// 只統計「這位訪客本來就看得到票數」的那些預測：已開獎／已截止的，
-// 加上他自己投過的。否則只要還有一個進行中的預測，這張表就等於把
-// 當前票數攤開給還沒投的人看，「投完才看得到」就形同虛設。
-function visibleTallyPolls(){
-  return pollData.filter(p=>!pollOpen(p)||myVoteOn(p.id));
+// ── 歷來預測結果 ──
+// 已經開獎或截止的預測集中放這裡，上面那段只留還能投的，
+// 免得同一張單曲在面板上出現兩次。
+function pollHistory(){
+  return pollData.filter(p=>!pollOpen(p))
+    .sort((a,b)=>(b.num-a.num)||String(a.group).localeCompare(b.group));
 }
-function voteRanking(){
-  const sum={},hit={},by={};
-  visibleTallyPolls().forEach(p=>{
-    const t=p.tally||{};
-    Object.keys(t).forEach(n=>{
-      if(!(t[n]>0))return;
-      sum[n]=(sum[n]||0)+t[n];
-      by[n]=by[n]||{}; by[n][p.group]=(by[n][p.group]||0)+t[n];
-    });
-    const ans=pollAnswer(p);
-    if(ans)ans.split('、').forEach(n=>{hit[n]=(hit[n]||0)+1;});
+// 群眾最看好的人（得票第一；同票就都算）
+function crowdPick(p){
+  const t=pollTally(p); if(!t.length)return null;
+  const top=t[0].n;
+  return {names:t.filter(x=>x.n===top).map(x=>x.name),n:top,
+          pct:p.voteCount?Math.round(top/p.voteCount*100):0};
+}
+function hitBy(ans,names){
+  if(!ans||!names||!names.length)return false;
+  const a=ans.split('、');
+  return names.some(n=>a.includes(n));
+}
+function historyStats(){
+  let done=0,crowdHit=0,mine=0,myHit=0;
+  pollHistory().forEach(p=>{
+    const ans=pollAnswer(p); if(!ans)return;
+    done++;
+    const c=crowdPick(p);
+    if(c&&hitBy(ans,c.names))crowdHit++;
+    const v=myVoteOn(p.id);
+    if(v){mine++; if(hitBy(ans,[v.pick]))myHit++;}
   });
-  return Object.keys(sum).map(name=>({
-    name, votes:sum[name], hits:hit[name]||0,
-    group:Object.keys(by[name]).reduce((a,g)=>by[name][g]>by[name][a]?g:a,
-                                       Object.keys(by[name])[0])
-  })).sort((a,b)=>b.votes-a.votes||b.hits-a.hits
-                 ||a.name.localeCompare(b.name,'ja'));
+  return {done,crowdHit,mine,myHit};
 }
-const PR_TOP=15;
-function buildVoteRanking(){
-  const box=elWith('details','pr-box');
+function buildHistory(){
+  const box=elWith('details','ph-box');
   const sm=document.createElement('summary');
-  sm.textContent='🏆 歷來得票排行';
+  sm.textContent='📊 歷來預測結果';
   box.appendChild(sm);
-  const polls=visibleTallyPolls(), list=voteRanking();
+  const list=pollHistory();
   if(!list.length){
-    box.appendChild(elWith('div','poll-empty',
-      pollData.length?'等你投完票或預測開獎後，這裡會統計歷來得票。'
-                     :'還沒有任何預測。'));
+    box.appendChild(elWith('div','poll-empty','還沒有開獎過的預測。'));
     return box;
   }
-  const max=list[0].votes;
-  const wrap=elWith('div','pv');
-  const medals={1:'🥇',2:'🥈',3:'🥉'};
-  let rank=0,prevV=null,prevH=null,i=0;
-  list.slice(0,PR_TOP).forEach(r=>{
-    i++;
-    if(r.votes!==prevV||r.hits!==prevH){rank=i;prevV=r.votes;prevH=r.hits;}
-    const row=elWith('div','pr-row');
-    row.title=r.name+'：歷來 '+r.votes+' 票'+(r.hits?('，中選 '+r.hits+' 次'):'');
-    row.append(
-      elWith('div','pr-pos',medals[rank]||String(rank)),
-      elWith('div','pr-bar','','background:'+(GROUP_BAR[r.group]||'#9333ea')),
-      elWith('div','pv-name',r.name),
-      (()=>{const t=elWith('div','pv-track');
-            t.appendChild(elWith('div','pv-fill','',
-              'width:'+Math.round(r.votes/max*100)+'%'));
-            return t;})(),
-      elWith('div','pv-n',r.votes+' 票'),
-      elWith('div','pr-hit',r.hits?('中 '+r.hits):''));
-    wrap.appendChild(row);
+  const st=historyStats();
+  const head=elWith('div','ph-stat');
+  head.append(elWith('span','ph-stat-n','共 '+st.done+' 次開獎'));
+  if(st.done){
+    head.append(elWith('span','ph-stat-s',
+      '大家猜中 '+st.crowdHit+' 次（'+Math.round(st.crowdHit/st.done*100)+'%）'));
+  }
+  if(st.mine){
+    head.append(elWith('span','ph-stat-me',
+      '你猜中 '+st.myHit+' / '+st.mine+' 次'));
+  }
+  box.appendChild(head);
+
+  list.forEach(p=>{
+    const ans=pollAnswer(p), c=crowdPick(p), mine=myVoteOn(p.id);
+    const row=elWith('details','ph-row');
+    const s2=document.createElement('summary');
+    s2.append(
+      elWith('span','ph-num','第'+p.num+'張'),
+      elWith('span','ph-song',p.title||'（曲名未定）'),
+      elWith('span','ph-kind',(GROUP_NAME[p.group]||p.group)+' '+pollKindLabel(p)));
+    if(!ans){
+      s2.appendChild(elWith('span','ph-wait','待開獎'));
+    } else {
+      const ok=c&&hitBy(ans,c.names);
+      s2.append(
+        elWith('span','ph-crowd',c?('大家：'+c.names.join('、')+' '+c.pct+'%'):'無人投票'),
+        elWith('span','ph-ans','答案：'+ans),
+        elWith('span','ph-mark'+(ok?' is-hit':''),ok?'✓ 命中':'✗ 落空'));
+    }
+    if(mine)s2.appendChild(elWith('span','ph-mine'+
+      (ans&&hitBy(ans,[mine.pick])?' is-hit':''),'你：'+mine.pick));
+    row.appendChild(s2);
+    // 展開看完整票數
+    const t=pollTally(p), total=p.voteCount||0;
+    if(t.length){
+      const wrap=elWith('div','pv');
+      t.forEach(x=>wrap.appendChild(pollBar(x.name,x.n,total,
+        !!ans&&ans.split('、').includes(x.name), !!mine&&mine.pick===x.name)));
+      row.appendChild(wrap);
+    } else row.appendChild(elWith('div','poll-empty','沒有人投票。'));
+    box.appendChild(row);
   });
-  box.appendChild(wrap);
-  const more=list.length>PR_TOP?('，只列前 '+PR_TOP+' 名'):'';
-  box.appendChild(elWith('div','poll-note',
-    '統計 '+polls.length+' 個預測、'+list.length+' 位成員'+more+
-    '。進行中而你還沒投的預測不會算進來。'));
   return box;
 }
 
