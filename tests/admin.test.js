@@ -81,6 +81,61 @@ const state=p=>p.evaluate(()=>({
     return document.querySelectorAll('#rank-panel-body .rank-row').length>0;}));
   await p.close();
 
+  // ── 成員編輯：出身地／身高／血型 ──
+  p=await open({uid:ADMIN_UID,name:'管理員',email:'admin@example.com'});
+  await seed(p);
+  const ME=await p.evaluate(async()=>{
+    const v=id=>document.getElementById(id).value;
+    const set=(id,x)=>{document.getElementById(id).value=x;};
+    const rows=()=>[...document.querySelectorAll('#member-panel .mp-row')]
+      .map(r=>r.querySelector('.mp-lbl').textContent+'='+
+              r.querySelector('.mp-val').textContent);
+
+    openMemberEdit('nogi','井上和');
+    const filled={home:v('me-home'),ht:v('me-ht'),blood:v('me-blood')};
+
+    set('me-home','台北市'); set('me-ht','161.5'); set('me-blood','O');
+    saveMemEdit();
+    await new Promise(r=>setTimeout(r,700));
+    const saved=getMemberInfo('nogi','井上和');
+    openMemberPanel('nogi','井上和');
+    const shown=rows();
+
+    // 清空：內建名冊有值，要寫得掉才行
+    openMemberEdit('nogi','井上和');
+    set('me-home',''); set('me-ht',''); set('me-blood','');
+    saveMemEdit();
+    await new Promise(r=>setTimeout(r,700));
+    const cleared=getMemberInfo('nogi','井上和');
+    openMemberPanel('nogi','井上和');
+    const afterClear=rows();
+
+    // 新增成員時三欄要是空的
+    openAddMember();
+    const blank={home:v('me-home'),ht:v('me-ht'),blood:v('me-blood')};
+    closeModal('memberEditModal');
+    return {filled,saved:{home:saved.home,ht:saved.ht,blood:saved.blood},
+            shown,cleared:{home:cleared.home,ht:cleared.ht,blood:cleared.blood},
+            afterClear,blank};
+  });
+  S.chk('編輯時帶出名冊裡的現有資料',
+        ME.filled.home==='神奈川県'&&ME.filled.ht==='158'&&ME.filled.blood==='B',
+        JSON.stringify(ME.filled));
+  S.chk('改完存得起來',
+        ME.saved.home==='台北市'&&ME.saved.ht===161.5&&ME.saved.blood==='O',
+        JSON.stringify(ME.saved));
+  S.chk('面板跟著變',
+        ME.shown.includes('出身地=台北市')&&ME.shown.includes('身高=161.5 cm')
+        &&ME.shown.includes('血型=O 型'), ME.shown.join(' / '));
+  S.chk('清空蓋得掉內建的值（不會被 undefined 忽略）',
+        !ME.cleared.home&&!ME.cleared.ht&&!ME.cleared.blood,
+        JSON.stringify(ME.cleared));
+  S.chk('清空後面板不再列那三列',
+        !ME.afterClear.some(x=>/^(出身地|身高|血型)=/.test(x)),
+        ME.afterClear.join(' / '));
+  S.chk('新增成員時三欄是空的',
+        !ME.blank.home&&!ME.blank.ht&&!ME.blank.blood, JSON.stringify(ME.blank));
+
   await b.close();
   const r=S.report();
   process.exit(r.fail||r.errors?1:0);
