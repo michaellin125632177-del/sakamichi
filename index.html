@@ -624,6 +624,25 @@ body.is-guest .edit-only{display:none!important;}
 .ph-stat-n{color:#9370c0;}
 .ph-stat-s{color:#e9d5ff;font-weight:700;}
 .ph-stat-me{color:#fcd34d;font-weight:700;}
+/* 賭盤排行榜 */
+.bl-row{display:flex;align-items:center;gap:4px 9px;flex-wrap:wrap;
+  font-size:.78rem;padding:5px 4px;border-top:1px solid rgba(255,255,255,.05);
+  border-radius:6px;}
+.bl-rank{width:2.1em;text-align:right;color:#9370c0;flex:none;}
+.bl-name{flex:1;min-width:5em;overflow:hidden;text-overflow:ellipsis;
+  white-space:nowrap;color:#e9d5ff;}
+.bl-net{font-weight:700;flex:none;}
+.bl-up{color:#34d399;}
+.bl-dn{color:#f87171;}
+.bl-fl{color:#9370c0;}
+.bl-sub{color:#9370c0;font-size:.72rem;flex:none;}
+.bl-me{background:rgba(252,211,77,.09);}
+.bl-me .bl-name{color:#fcd34d;font-weight:700;}
+.ph-note{color:#7e62a8;font-size:.71rem;margin-top:7px;}
+@media(max-width:480px){
+  .bl-row{font-size:.75rem;}
+  .bl-sub{width:100%;padding-left:2.9em;}
+}
 .ph-row{border-top:1px solid rgba(255,255,255,.05);padding:6px 0;}
 .ph-row>summary{display:flex;flex-wrap:wrap;align-items:center;gap:5px 10px;
   font-size:.76rem;font-weight:400;color:#c4b5fd;}
@@ -2051,6 +2070,7 @@ function buildPollList(){
   if(live.length)live.forEach(p=>host.appendChild(buildPollCard(p)));
   else host.appendChild(elWith('div','poll-empty',
     '目前沒有進行中的預測，下一張單曲公布時再來看看。'));
+  host.appendChild(buildRanking());
   host.appendChild(buildHistory());
 }
 function buildPollCard(p){
@@ -2348,6 +2368,84 @@ function historyStats(){
   });
   return {done,crowdHit,mine,myHit};
 }
+// ── 賭盤排行榜 ──
+// 資料全部來自每場結算時寫在 poll 文件上的 results。那份文件公開可讀、
+// 而且早就在前端了，所以這個排行榜不用多讀任何一筆。
+// （改成讀每個人的錢包是不行的：規則只讓本人與站長讀，而且 N 個玩家
+//   就是 N 次讀取，免費額度撐不住。）
+function betResults(p){
+  if(Array.isArray(p.results))return p.results;
+  // 這次改動之前結算的盤只記了中獎者，沒中的那幾注救不回來，
+  // 只能用現有的資料算，所以那幾場的淨賺會偏高。
+  return (p.payouts||[]).map(x=>({name:x.name,stake:x.stake||0,
+    payout:x.payout||0,hit:(x.payout||0)>(x.stake||0)}));
+}
+function betRanking(){
+  const by={};
+  pollData.filter(p=>p.settled).forEach(p=>{
+    betResults(p).forEach(r=>{
+      const k=(r.name||'').trim()||'（無名氏）';
+      const m=by[k]||(by[k]={name:k,net:0,stake:0,payout:0,bets:0,wins:0});
+      m.stake+=r.stake||0;
+      m.payout+=r.payout||0;
+      m.net+=(r.payout||0)-(r.stake||0);
+      m.bets++;
+      if(r.hit)m.wins++;
+    });
+  });
+  const rows=Object.values(by).sort((a,b)=>
+    (b.net-a.net)||(b.wins-a.wins)||a.name.localeCompare(b.name));
+  // 同分同名次（跟在籍天數排行一樣的規則）
+  let rank=0,prev=null;
+  rows.forEach((r,i)=>{
+    if(prev===null||r.net!==prev){rank=i+1;prev=r.net;}
+    r.rank=rank;
+  });
+  return rows;
+}
+const BL_TOP=10;
+function buildRanking(){
+  const box=elWith('details','ph-box');
+  const sm=document.createElement('summary');
+  sm.textContent='💰 賭盤排行榜';
+  box.appendChild(sm);
+  const rows=betRanking();
+  if(!rows.length){
+    box.appendChild(elWith('div','poll-empty','還沒有結算過的賭盤。'));
+    return box;
+  }
+  const staked=rows.reduce((a,r)=>a+r.stake,0);
+  const head=elWith('div','ph-stat');
+  head.append(elWith('span','ph-stat-n','參戰 '),
+              elWith('span','ph-stat-s',rows.length+' 人'),
+              elWith('span','ph-stat-n','累計押注 '),
+              elWith('span','ph-stat-s',coin(staked)));
+  box.appendChild(head);
+  const me=playerName();
+  const show=rows.slice(0,BL_TOP);
+  if(me&&!show.some(r=>r.name===me)){
+    const mine=rows.find(r=>r.name===me);
+    if(mine)show.push(mine);
+  }
+  show.forEach(r=>{
+    const row=elWith('div','bl-row'+(r.name===me?' bl-me':''));
+    const medal=['🥇','🥈','🥉'][r.rank-1]||(r.rank+'.');
+    row.append(elWith('span','bl-rank',medal),
+               elWith('span','bl-name',r.name));
+    const cls=r.net>0?'bl-up':(r.net<0?'bl-dn':'bl-fl');
+    row.appendChild(elWith('span','bl-net '+cls,
+      (r.net>0?'+':'')+coin(r.net)));
+    row.appendChild(elWith('span','bl-sub',
+      r.wins+' / '+r.bets+' 中（'+Math.round(r.wins/r.bets*100)+'%）'));
+    box.appendChild(row);
+  });
+  if(rows.length>show.length)
+    box.appendChild(elWith('div','ph-note',
+      '只列前 '+BL_TOP+' 名，共 '+rows.length+' 人。'));
+  box.appendChild(elWith('div','ph-note',
+    '淨賺＝派彩 − 押注，只算賭盤，不含測驗獎金。'));
+  return box;
+}
 function buildHistory(){
   const box=elWith('details','ph-box');
   const sm=document.createElement('summary');
@@ -2441,10 +2539,14 @@ async function settlePoll(id){
       new firebase.firestore.FieldPath('balance'),
       firebase.firestore.FieldValue.increment(row.payout));
   });
+  // 把「每一個下注的人」都記在 poll 文件上（沒中的派彩 0），排行榜才算得出
+  // 輸贏。poll 文件本來就公開可讀又已經載入前端，排行榜因此不用多讀任何一筆。
+  const results=bets.map(b=>{
+    const w=r.rows.find(x=>x.uid===b.uid);
+    return {name:b.name,stake:b.stake||0,payout:w?w.payout:0,hit:!!(w&&w.hit)};
+  }).sort((a,b)=>(b.payout-a.payout)||(b.stake-a.stake)).slice(0,500);
   batch.update(db.collection(POLL_COL).doc(id),{
-    settled:true,settledAt:Date.now(),
-    payouts:r.rows.filter(x=>x.payout>0)
-      .map(x=>({name:x.name,stake:x.stake,payout:x.payout})).slice(0,50)});
+    settled:true,settledAt:Date.now(),results});
   await batch.commit();
   return r;
 }

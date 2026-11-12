@@ -204,7 +204,7 @@ const seedSingles=p=>p.evaluate(async()=>{
       w2:window.__store.wallets.w2.balance,
       L1:window.__store.wallets.L1.balance,
       settled:window.__store.polls[id].settled,
-      payouts:window.__store.polls[id].payouts,id};
+      results:window.__store.polls[id].results,id};
   });
   S.chk('答案自動取自單曲的 center', R.ans==='一ノ瀬美空', R.ans);
   S.chk('猜中的人拿到錢', R.w1===750&&R.w2===250, R.w1+'/'+R.w2);
@@ -212,11 +212,79 @@ const seedSingles=p=>p.evaluate(async()=>{
   S.chk('發出去的總額等於彩池', R.w1+R.w2===1000, R.w1+R.w2);
   S.chk('標記成已結算', R.settled===true);
   S.chk('結算結果寫進預測裡（大家看得到誰贏了）',
-        Array.isArray(R.payouts)&&R.payouts.length===2, JSON.stringify(R.payouts));
+        Array.isArray(R.results)&&R.results.length===3, JSON.stringify(R.results));
+  S.chk('沒猜中的也要記下來（派彩 0），排行榜才算得出誰在輸錢',
+        (R.results||[]).filter(x=>x.payout===0&&x.stake>0).length===1,
+        JSON.stringify(R.results));
+  S.chk('中獎與否有標記',
+        (R.results||[]).filter(x=>x.hit).length===2,
+        JSON.stringify((R.results||[]).map(x=>x.name+':'+x.hit)));
   const again=await p.evaluate(async id=>{
     try{await settlePoll(id);return 'should-not-pass';}
     catch(e){return e.message;}},R.id);
   S.chk('不能重複結算（否則會一直發錢）', /已經結算過/.test(again), again);
+
+  // ── 賭盤排行榜 ──
+  // 資料來源是結算時寫在 poll 文件上的 results，不另外讀任何一筆。
+  const RK=await p.evaluate(()=>{
+    const save=pollData;
+    pollData=[
+      {id:'p1',settled:true,results:[
+        {name:'A',stake:100,payout:300,hit:true},
+        {name:'B',stake:200,payout:0,hit:false}]},
+      {id:'p2',settled:true,results:[
+        {name:'A',stake:100,payout:0,hit:false},
+        {name:'C',stake:50,payout:50,hit:false}]},   // 無人中獎、原銀奉還
+      {id:'p3',settled:false,results:[
+        {name:'Z',stake:999,payout:999,hit:true}]},  // 還沒結算，不該算進去
+      {id:'p4',settled:true,payouts:[                // 舊格式：只有中獎者
+        {name:'B',stake:100,payout:400}]}
+    ];
+    const r=betRanking();
+    pollData=save;
+    return r;
+  });
+  const find=n=>RK.find(r=>r.name===n)||{};
+  S.chk('只算已經結算的盤', !RK.some(r=>r.name==='Z'), RK.map(r=>r.name).join());
+  S.chk('淨賺＝派彩 − 押注', find('A').net===100,
+        'A net='+find('A').net);
+  S.chk('下注次數與命中次數分開記',
+        find('A').bets===2&&find('A').wins===1,
+        find('A').bets+' 注 '+find('A').wins+' 中');
+  S.chk('舊格式（只記中獎者）也算得進去', find('B').net===100,
+        'B net='+find('B').net);
+  S.chk('原銀奉還不算贏', find('C').wins===0&&find('C').net===0,
+        JSON.stringify(find('C')));
+  S.chk('同分同名次', find('A').rank===1&&find('B').rank===1&&find('C').rank===3,
+        RK.map(r=>r.rank+':'+r.name).join(' '));
+  S.chk('淨賺由高到低排', RK.map(r=>r.net).join()==='100,100,0',
+        RK.map(r=>r.net).join());
+
+  // 面板擋在「有錢包」之後，沒錢包的話畫面會停在建立錢包那一步
+  await p.evaluate(async()=>{await ensureWallet('站長');});
+  await p.waitForTimeout(600);
+  await p.evaluate(()=>{setPollTab('bet');buildPollList();});
+  await p.waitForTimeout(400);
+  S.chk('畫面上列出三位下注者',
+        (await p.locator('#poll-list .bl-row').count())===3,
+        await p.locator('#poll-list .bl-row').count());
+  S.chk('輸錢的標紅、贏錢的標綠',
+        (await p.locator('#poll-list .bl-up').count())===2
+        &&(await p.locator('#poll-list .bl-dn').count())===1,
+        (await p.locator('#poll-list .bl-up').count())+' 綠 '+
+        (await p.locator('#poll-list .bl-dn').count())+' 紅');
+  const mine=await p.evaluate(async()=>{
+    const save=myWallet?myWallet.name:null;
+    if(myWallet)myWallet.name='阿坂';        // 假裝站長就是阿坂
+    buildPollList();
+    await new Promise(r=>setTimeout(r,200));
+    const n=document.querySelectorAll('#poll-list .bl-me').length;
+    const txt=(document.querySelector('#poll-list .bl-me')||{}).textContent||'';
+    if(myWallet)myWallet.name=save;
+    buildPollList();
+    return {n,txt};
+  });
+  S.chk('自己那一列會標起來', mine.n===1&&mine.txt.includes('阿坂'), mine.txt);
 
   // 還沒開獎不能結算
   const early=await p.evaluate(async()=>{
