@@ -312,6 +312,24 @@ const mkPoll=(p,o={})=>p.evaluate(async o=>{
   S.chk('管理按鈕放在展開的內容裡，不在 summary（免得點了就收合）',
         await p.evaluate(()=>[...document.querySelectorAll('.ph-row .poll-admin')]
           .every(b=>!b.closest('summary'))));
+  // 按鈕在展開後才看得到，所以那一列必須看得出來可以點開
+  const AF=await p.evaluate(()=>{
+    const r=document.querySelector('.ph-row');
+    r.open=false;
+    const before=getComputedStyle(r.querySelector('summary'),'::before').content;
+    r.open=true;
+    const after=getComputedStyle(r.querySelector('summary'),'::before').content;
+    r.open=false;
+    return {before,after,
+      hint:(r.querySelector('.ph-more')||{}).textContent,
+      cursor:getComputedStyle(r.querySelector('summary')).cursor};
+  });
+  S.chk('收合時有展開三角形', /▸/.test(AF.before), AF.before);
+  S.chk('展開後三角形轉向', /▾/.test(AF.after), AF.after);
+  S.chk('滑鼠移上去是可點的手勢', AF.cursor==='pointer', AF.cursor);
+  S.chk('收合時有文字提示點開能做什麼',
+        /點開/.test(AF.hint||''), AF.hint);
+  S.chk('站長的提示有提到管理', /管理/.test(AF.hint||''), AF.hint);
   // 截止但還沒開獎的，要給得回「重新開放」
   await p.evaluate(async()=>{
     const id=pollId('nogi',91,'sel');
@@ -423,6 +441,8 @@ const mkPoll=(p,o={})=>p.evaluate(async o=>{
     await batch.commit();
   });
   const P46=await mkPoll(p,{num:46});
+  // 再開一個會自動開獎的（第42張有單曲資料），歷來區才有東西可以驗
+  await mkPoll(p,{num:42,title:'已開獎',tally:{'一ノ瀬美空':3},voteCount:3});
   await p.waitForTimeout(1200);
   const G=await p.evaluate(()=>({
     canEdit:canEdit(), guest:document.body.classList.contains('is-guest'),
@@ -436,8 +456,13 @@ const mkPoll=(p,o={})=>p.evaluate(async o=>{
   await p.evaluate(()=>{const b=document.querySelector('.ph-box');
     if(b){b.open=true;document.querySelectorAll('.ph-row').forEach(r=>r.open=true);}});
   await p.waitForTimeout(300);
+  S.chk('訪客的歷來區有列出已開獎的',
+        (await p.locator('.ph-row').count())>0, await p.locator('.ph-row').count());
   S.chk('訪客在歷來那邊也看不到管理按鈕',
         (await p.locator('.ph-row .poll-admin').count())===0);
+  S.chk('訪客的提示不會說可以管理',
+        !/管理/.test(await p.locator('.ph-more').first().textContent()),
+        await p.locator('.ph-more').first().textContent());
   await p.fill('#poll-nick','路過的');
   await p.selectOption('#pv-sel-'+P46,'遠藤さくら'); await p.waitForTimeout(200);
   await p.click('.poll-pick .btn-save'); await p.waitForTimeout(1400);
@@ -446,7 +471,7 @@ const mkPoll=(p,o={})=>p.evaluate(async o=>{
     vote:Object.values(window.__store.votes)[0],
     id:Object.keys(window.__store.votes)[0],
     tally:pollData.find(x=>x.num===46).tally,
-    bars:document.querySelectorAll('.pv-row').length}));
+    bars:document.querySelectorAll('#poll-list>.poll-card .pv-row').length}));
   S.chk('投票時才建立匿名帳號', GV.anonCalls===1, GV.anonCalls);
   S.chk('匿名的票寫得進去', GV.vote&&GV.vote.pick==='遠藤さくら', JSON.stringify(GV.vote));
   S.chk('匿名票的 id 用匿名 uid', /_anon-/.test(GV.id||''), GV.id);

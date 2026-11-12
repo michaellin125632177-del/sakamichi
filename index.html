@@ -578,7 +578,12 @@ body.is-guest .edit-only{display:none!important;}
 .ph-row{border-top:1px solid rgba(255,255,255,.05);padding:6px 0;}
 .ph-row>summary{display:flex;flex-wrap:wrap;align-items:center;gap:5px 10px;
   font-size:.76rem;font-weight:400;color:#c4b5fd;}
-.ph-row>summary::before{content:'';}
+/* 每一列都可以點開看完整票數與管理按鈕，要讓人看得出來 */
+.ph-row>summary::before{content:'▸';color:#7c5cb0;font-size:.7rem;
+  display:inline-block;width:1em;transition:transform .15s;}
+.ph-row[open]>summary::before{content:'▾';}
+.ph-row>summary:hover{background:rgba(255,255,255,.03);}
+.ph-row>summary:hover::before{color:#c084fc;}
 .ph-num{color:#e9d5ff;font-weight:700;}
 .ph-song{color:#d8c7f5;overflow:hidden;text-overflow:ellipsis;
   white-space:nowrap;max-width:11em;}
@@ -588,6 +593,8 @@ body.is-guest .edit-only{display:none!important;}
 .ph-wait{color:#7c5cb0;}
 .ph-mark{color:#fca5a5;font-weight:700;}
 .ph-mark.is-hit{color:#86efac;}
+.ph-more{margin-left:auto;color:#7c5cb0;font-size:.7rem;}
+.ph-row[open] .ph-more{display:none;}
 .ph-mine{color:#9370c0;border:1px solid #3a2060;border-radius:9px;padding:1px 7px;
   font-size:.72rem;}
 .ph-mine.is-hit{color:#86efac;border-color:#166534;background:rgba(34,197,94,.1);}
@@ -1784,6 +1791,7 @@ function buildHistory(){
     // 管理按鈕放在展開後的內容裡，不放 summary——放在 summary 裡
     // 點按鈕會順手把那一列收合起來。
     if(canEdit())row.appendChild(buildPollAdmin(p));
+    s2.appendChild(elWith('span','ph-more',canEdit()?'點開看票數／管理':'點開看票數'));
     box.appendChild(row);
   });
   return box;
