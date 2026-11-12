@@ -1639,6 +1639,37 @@ function mkQ(q,answer,pool){
   if(wrong.length<3)return null;
   return {q,answer,options:shuffle([answer,...wrong])};
 }
+// 年份題的候選池：取實際出現過的年份區間，前後再各放寬 4 年（不早於
+// 2011 乃木坂成立、不晚於今年），中間缺的年份也補進來。池子夠大，
+// 下面才拉得開選項。
+function yearPool(ys){
+  const lo=Math.max(2011, Math.min(...ys)-4);
+  const hi=Math.min(new Date().getFullYear(), Math.max(...ys)+4);
+  const out=[];
+  for(let y=lo;y<=hi;y++)out.push(y+'年');
+  return out;
+}
+// 挑 n 個干擾選項，跟正解以及彼此都至少差 gap
+function spread(pool,answer,n,gap){
+  const a=parseInt(answer,10), out=[];
+  for(const v of shuffle([...new Set(pool)])){
+    if(out.length>=n)break;
+    const x=parseInt(v,10);
+    if(Math.abs(x-a)<gap)continue;
+    if(out.some(o=>Math.abs(parseInt(o,10)-x)<gap))continue;
+    out.push(v);
+  }
+  return out;
+}
+// 年份題。2018/2019/2020/2022 這種四連號不是在考記憶，是在擲骰子，
+// 所以選項之間至少差 3 年；年份區間真的太窄才退到 2 年。
+function mkYearQ(q,answer,pool){
+  for(const gap of [3,3,3,2,2]){
+    const w=spread(pool,answer,3,gap);
+    if(w.length===3)return {q,answer,options:shuffle([answer,...w])};
+  }
+  return null;
+}
 // 題型全部從現成資料推導，不另外維護題庫
 const QUIZ_MAKERS=[
   // 表題曲的 center。一定要列出日文曲名——只給編號沒有人猜得到。
@@ -1693,16 +1724,16 @@ const QUIZ_MAKERS=[
   g=>{const all=getAllMembers(g);
     const names=Object.keys(all).filter(n=>all[n].joined);
     const n=pick(names); if(!n)return null;
-    const pool=[...new Set(names.map(x=>all[x].joined.slice(0,4)+'年'))];
-    return mkQ(n+' 是哪一年加入 '+(GROUP_NAME[g]||g)+' 的？',
-      all[n].joined.slice(0,4)+'年', pool);},
+    return mkYearQ(n+' 是哪一年加入 '+(GROUP_NAME[g]||g)+' 的？',
+      all[n].joined.slice(0,4)+'年',
+      yearPool(names.map(x=>+all[x].joined.slice(0,4))));},
   // 畢業年份（只問已經畢業的）
   g=>{const all=getAllMembers(g);
     const names=Object.keys(all).filter(n=>all[n].grad);
     const n=pick(names); if(!n)return null;
-    const pool=[...new Set(names.map(x=>all[x].grad.slice(0,4)+'年'))];
-    return mkQ(n+' 是哪一年從 '+(GROUP_NAME[g]||g)+' 畢業的？',
-      all[n].grad.slice(0,4)+'年', pool);},
+    return mkYearQ(n+' 是哪一年從 '+(GROUP_NAME[g]||g)+' 畢業的？',
+      all[n].grad.slice(0,4)+'年',
+      yearPool(names.map(x=>+all[x].grad.slice(0,4))));},
   // 出身地（目前只有現役成員有這筆資料，沒有的人不會被抽到）
   g=>{const all=getAllMembers(g);
     const names=Object.keys(all).filter(n=>all[n].home);
