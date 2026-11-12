@@ -1631,15 +1631,20 @@ function mkQ(q,answer,pool){
 }
 // 題型全部從現成資料推導，不另外維護題庫
 const QUIZ_MAKERS=[
-  // 這張單曲的 center 是誰
-  g=>{const d=pick(getData(g).filter(x=>(x.center||[]).length===1));
+  // 表題曲的 center。一定要列出日文曲名——只給編號沒有人猜得到。
+  g=>{const d=pick(getData(g).filter(x=>(x.center||[]).length===1&&x.title));
     if(!d)return null;
-    return mkQ((GROUP_NAME[g]||g)+' 第'+d.num+'張《'+d.title+'》的 center 是誰？',
+    return mkQ((GROUP_NAME[g]||g)+'《'+d.title+'》的 center 是誰？',
       d.center[0], Object.keys(getAllMembers(g)));},
-  // 這張單曲是第幾張
-  g=>{const d=pick(getData(g)); if(!d)return null;
-    return mkQ('《'+d.title+'》是 '+(GROUP_NAME[g]||g)+' 的第幾張單曲？',
-      '第'+d.num+'張', getData(g).map(x=>'第'+x.num+'張'));},
+  // Under 曲的 center。有收錄 under 曲名就用它，沒有才退回表題曲名當線索。
+  g=>{const list=getData(g).filter(x=>{
+      const r=underRowsOf(g,x); return r&&centerOfRows(r).length===1;});
+    const d=pick(list); if(!d)return null;
+    const ut=underTitleOf(g,d);
+    const where=ut?('《'+ut+'》')
+                  :('《'+d.title+'》那張的 '+underLabel(g)+' 曲');
+    return mkQ((GROUP_NAME[g]||g)+where+'的 center 是誰？',
+      centerOfRows(underRowsOf(g,d))[0], Object.keys(getAllMembers(g)));},
   // 期別
   g=>{const all=getAllMembers(g);
     const names=Object.keys(all).filter(n=>all[n].gen);
@@ -1647,13 +1652,38 @@ const QUIZ_MAKERS=[
     const gens=[...new Set(names.map(x=>genLabel(all[x].gen)))];
     return mkQ(n+' 是 '+(GROUP_NAME[g]||g)+' 的第幾期？',
       genLabel(all[n].gen), gens);},
-  // 選拔人數
-  g=>{const d=pick(getData(g).filter(x=>selCountOf(x)>0)); if(!d)return null;
-    const pool=[...new Set(getData(g).map(selCountOf).filter(Boolean))]
-      .map(v=>v+'名');
-    return mkQ((GROUP_NAME[g]||g)+' 第'+d.num+'張《'+d.title+'》的選拔是幾人？',
-      selCountOf(d)+'名', pool);},
-  // 誰在籍比較久（已畢業的，數字固定）
+  // 同期
+  g=>{const all=getAllMembers(g);
+    const names=Object.keys(all).filter(n=>all[n].gen);
+    const n=pick(names); if(!n)return null;
+    const same=names.filter(x=>x!==n&&String(all[x].gen)===String(all[n].gen));
+    const other=names.filter(x=>String(all[x].gen)!==String(all[n].gen));
+    if(!same.length||other.length<3)return null;
+    // pick 要先取好再用：呼叫兩次會取到不同的人，正解就不在選項裡了
+    const ans=pick(same);
+    return {q:'下面哪一位跟 '+n+' 同期？',
+      answer:ans, options:shuffle([ans,...distract(other,'',3)])};},
+  // 生日年份
+  g=>{const all=getAllMembers(g);
+    const names=Object.keys(all).filter(n=>all[n].bday);
+    const n=pick(names); if(!n)return null;
+    const pool=[...new Set(names.map(x=>all[x].bday.slice(0,4)+'年'))];
+    return mkQ(n+' 是哪一年出生的？', all[n].bday.slice(0,4)+'年', pool);},
+  // 入團年份
+  g=>{const all=getAllMembers(g);
+    const names=Object.keys(all).filter(n=>all[n].joined);
+    const n=pick(names); if(!n)return null;
+    const pool=[...new Set(names.map(x=>all[x].joined.slice(0,4)+'年'))];
+    return mkQ(n+' 是哪一年加入 '+(GROUP_NAME[g]||g)+' 的？',
+      all[n].joined.slice(0,4)+'年', pool);},
+  // 畢業年份（只問已經畢業的）
+  g=>{const all=getAllMembers(g);
+    const names=Object.keys(all).filter(n=>all[n].grad);
+    const n=pick(names); if(!n)return null;
+    const pool=[...new Set(names.map(x=>all[x].grad.slice(0,4)+'年'))];
+    return mkQ(n+' 是哪一年從 '+(GROUP_NAME[g]||g)+' 畢業的？',
+      all[n].grad.slice(0,4)+'年', pool);},
+  // 誰在籍比較久（已畢業的，數字固定不會隨時間變）
   g=>{const t=tenureMap();
     const all=getAllMembers(g);
     const names=Object.keys(all).filter(n=>t[n]&&!t[n].active);
@@ -1661,18 +1691,7 @@ const QUIZ_MAKERS=[
     const four=shuffle(names).slice(0,4);
     const top=four.reduce((a,b)=>t[b].days>t[a].days?b:a);
     return {q:'下面四位在 '+(GROUP_NAME[g]||g)+' 系列待得最久的是誰？',
-      answer:top,options:shuffle(four)};},
-  // Under 曲的 center
-  g=>{const list=getData(g).filter(x=>{
-      const r=underRowsOf(g,x); return r&&centerOfRows(r).length===1;});
-    const d=pick(list); if(!d)return null;
-    return mkQ((GROUP_NAME[g]||g)+' 第'+d.num+'張的 '+underLabel(g)+
-      ' 曲 center 是誰？', centerOfRows(underRowsOf(g,d))[0],
-      Object.keys(getAllMembers(g)));},
-  // 中文譯名
-  g=>{const d=pick(getData(g).filter(x=>x.zh&&x.zh!==x.title)); if(!d)return null;
-    return mkQ('《'+d.title+'》的中文譯名是？', d.zh,
-      getData(g).map(x=>x.zh).filter(Boolean));}
+      answer:top,options:shuffle(four)};}
 ];
 function buildQuiz(){
   const groups=ALL_GROUPS.filter(g=>getData(g).length>=6);

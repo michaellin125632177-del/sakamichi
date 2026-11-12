@@ -36,8 +36,64 @@ const S=suite('冷知識測驗與開盤台');
   S.chk('題目與答案都是有內容的字串',
         Q.runs.every(r=>r.strs&&r.ansStr));
   S.chk('題型有混到好幾種',
-        new Set(Q.sample.map(t=>t.replace(/第\d+張|《[^》]*》|[^？]*是/g,''))).size>1,
+        new Set(Q.sample.map(t=>t.replace(/《[^》]*》|[^？]*是/g,''))).size>1,
         Q.sample.length);
+
+  // ── 題型的內容 ──
+  const K=await p.evaluate(()=>{
+    const all=[];
+    for(let i=0;i<40;i++)all.push(...buildQuiz());
+    const has=re=>all.filter(q=>re.test(q.q));
+    return {
+      n:all.length,
+      ansInOpts:all.every(q=>q.options.includes(q.answer)),
+      centerQ:has(/的 center 是誰/).length,
+      noTitle:all.filter(q=>/center/.test(q.q)&&!/《/.test(q.q)).length,
+      numOnly:all.filter(q=>/第\d+張/.test(q.q)).length,
+      zh:has(/中文譯名/).length,
+      selCount:has(/選拔是幾人/).length,
+      fukujin:has(/福神/).length,
+      gen:has(/第幾期/).length,
+      sameGen:has(/同期/).length,
+      bday:has(/哪一年出生/).length,
+      joined:has(/哪一年加入/).length,
+      grad:has(/哪一年.*畢業/).length,
+      tenure:has(/待得最久/).length,
+      // 同期題的正解必須真的同期
+      sameGenOk:(()=>{
+        const qs=has(/同期/);
+        return qs.every(q=>{
+          const m=/跟 (.+?) 同期/.exec(q.q); if(!m)return false;
+          return ALL_GROUPS.some(g=>{
+            const all=getAllMembers(g);
+            return all[m[1]]&&all[q.answer]&&
+                   String(all[m[1]].gen)===String(all[q.answer].gen);});
+        });})(),
+      // 其他三個選項必須不同期
+      sameGenDistract:(()=>{
+        const qs=has(/同期/);
+        return qs.every(q=>{
+          const m=/跟 (.+?) 同期/.exec(q.q); if(!m)return false;
+          return ALL_GROUPS.some(g=>{
+            const all=getAllMembers(g); if(!all[m[1]])return false;
+            return q.options.filter(o=>all[o]&&
+              String(all[o].gen)===String(all[m[1]].gen)).length===1;});
+        });})()
+    };
+  });
+  S.chk('大量抽樣下正解都在選項裡（同期題曾經抽兩次抽到不同人）',
+        K.ansInOpts, K.n+' 題');
+  S.chk('拿掉了「第幾張單曲」', K.numOnly===0, K.numOnly);
+  S.chk('拿掉了「中文譯名」', K.zh===0, K.zh);
+  S.chk('拿掉了「選拔人數」', K.selCount===0, K.selCount);
+  S.chk('拿掉了「福神人數」', K.fukujin===0, K.fukujin);
+  S.chk('center 題一定列出日文曲名（只給編號猜不到）',
+        K.centerQ>0&&K.noTitle===0, K.centerQ+' 題、沒曲名的 '+K.noTitle);
+  [['期別',K.gen],['同期',K.sameGen],['生日年份',K.bday],
+   ['入團年份',K.joined],['畢業年份',K.grad],['在籍最久',K.tenure]]
+    .forEach(([n,v])=>S.chk('出得到「'+n+'」題', v>0, v));
+  S.chk('同期題的正解真的同期', K.sameGenOk);
+  S.chk('同期題的干擾選項都不同期', K.sameGenDistract);
 
   // ── 答題與獎金 ──
   await p.click('#poll-btn'); await p.waitForTimeout(500);
