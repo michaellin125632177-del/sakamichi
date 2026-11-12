@@ -193,6 +193,32 @@ const S=suite('冷知識測驗與開盤台');
   S.chk('月份的正解跟名冊一致', M.monOk);
   S.chk('月份選項是 1～12 月且不重複', M.monFmt);
 
+  // ── 年份題的選項要拉得開 ──
+  const Y=await p.evaluate(()=>{
+    const all=[];
+    for(let i=0;i<40;i++)all.push(...buildQuiz());
+    const yq=all.filter(q=>/哪一年加入|哪一年從/.test(q.q));
+    const yrs=q=>q.options.map(o=>parseInt(o,10)).sort((a,b)=>a-b);
+    const minGap=q=>{const y=yrs(q);let m=99;
+      for(let i=1;i<y.length;i++)m=Math.min(m,y[i]-y[i-1]);return m;};
+    return {
+      n:yq.length,
+      fmt:yq.every(q=>q.options.every(o=>/^\d{4}年$/.test(o))),
+      uniq:yq.every(q=>new Set(q.options).size===4),
+      gap2:yq.every(q=>minGap(q)>=2),
+      gap3:yq.filter(q=>minGap(q)>=3).length,
+      // 四個選項的跨度（最大減最小）至少要有 6 年才看得出差別
+      span6:yq.every(q=>{const y=yrs(q);return y[3]-y[0]>=6;}),
+      sample:yq.slice(0,3).map(q=>q.q+' → '+q.answer+' ['+q.options.join('／')+']')
+    };
+  });
+  S.chk('還是出得到年份題', Y.n>0, Y.n);
+  S.chk('年份格式正常', Y.fmt);
+  S.chk('四個年份不重複', Y.uniq);
+  S.chk('相鄰選項至少差 2 年', Y.gap2);
+  S.chk('絕大多數至少差 3 年', Y.gap3>=Y.n*0.8, Y.gap3+' / '+Y.n);
+  S.chk('四個選項的跨度至少 6 年', Y.span6, Y.sample[0]);
+
   // ── 答題與獎金 ──
   await p.click('#poll-btn'); await p.waitForTimeout(500);
   await p.evaluate(()=>setPollTab('quiz')); await p.waitForTimeout(400);
