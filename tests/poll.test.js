@@ -290,6 +290,10 @@ const mkPoll=(p,o={})=>p.evaluate(async o=>{
         await p.locator('#poll-list>.poll-card').count());
   S.chk('已開獎的不會在上面重複出現一次',
         !(await p.locator('#poll-list>.poll-card').textContent()).includes('已開獎'));
+  // 預設就要攤開，收起來的東西沒有人找得到
+  S.chk('兩個面板預設都是展開的',
+        (await p.locator('#poll-list .ph-box[open]').count())===2,
+        await p.locator('#poll-list .ph-box[open]').count());
   await p.evaluate(()=>document.querySelector('.ph-box').open=true);
   await p.waitForTimeout(300);
   S.chk('歷來列出 3 筆', (await p.locator('.ph-row').count())===3,
@@ -310,6 +314,29 @@ const mkPoll=(p,o={})=>p.evaluate(async o=>{
 
   S.chk('舊的得票排行已經移除', await p.evaluate(()=>
     typeof voteRanking==='undefined'&&!document.querySelector('.pr-box')));
+
+  // ── 待結算：站長不必自己去翻 ──
+  const TODO=await p.evaluate(async()=>{
+    const save=pollData;
+    pollData=[{id:'x1',group:'nogi',num:99,kind:'sel',title:'測試盤',
+      tally:{'小川彩':1},voteCount:1,pool:300,settled:false,
+      answer:'小川彩',closed:true,createdAt:1,deadline:''}];
+    buildPollList();
+    await new Promise(r=>setTimeout(r,200));
+    const q=x=>document.querySelectorAll('#poll-list '+x).length;
+    const r={todo:q('.settle-todo'),
+      txt:(document.querySelector('#poll-list .settle-todo')||{}).textContent||'',
+      rowOpen:q('.ph-row[open]'),
+      btn:[...document.querySelectorAll('#poll-list .pg-btn')]
+            .filter(b=>/結算發錢/.test(b.textContent)).length,
+      edit:canEdit()};
+    pollData=save; buildPollList();
+    return r;
+  });
+  S.chk('有待結算時，站長在最上面看得到提醒', TODO.todo===1, TODO.txt);
+  S.chk('提醒寫出是哪一張', /第99張/.test(TODO.txt), TODO.txt);
+  S.chk('待結算的那一列自動攤開', TODO.rowOpen===1, TODO.rowOpen);
+  S.chk('結算按鈕就在攤開的那一列裡', TODO.btn===1, TODO.btn);
 
   // ── 歷來那一列的管理按鈕（站長限定）──
   S.chk('站長在歷來每一列都看得到管理按鈕',
