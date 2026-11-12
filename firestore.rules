@@ -1,9 +1,10 @@
 rules_version = '2';
 
-// 坂道選拔名單的 Firestore 規則。
-// 改這個檔案「不會」生效 —— 它只是版控用的副本。
-// 真正要生效必須到 Firebase Console → Firestore Database → 規則，
-// 把內容貼進去再按「發布」。
+// 坂道選拔名單 — Firestore 安全規則
+//
+// ※ 這個檔案只是版控用的副本，改它不會生效。
+//   要到 Firebase Console → Firestore Database → 規則，貼上後按「發布」。
+
 service cloud.firestore {
   match /databases/{database}/documents {
 
@@ -21,65 +22,75 @@ service cloud.firestore {
     match /members/{doc} { allow read: if true; allow write: if isOwner(); }
 
     // ── C 位預測 ──
-    // 票數直接累加在 poll 文件的 tally 裡，訪客只要讀 1 筆就看得到全部票數。
-    // 代價是訪客得有權限改這筆文件，所以下面把「能改什麼」鎖得很死。
+    // 票數直接累加在 poll 文件的 tally，訪客讀 1 筆就看得到全部票數。
+    // 代價是訪客得有權限改這筆文件，所以下面把「能改什麼」鎖到只剩投票這件事。
     match /polls/{pid} {
-      allow read: if true;
-      allow create, delete: if isOwner();
 
-      // 站長可以任意改；訪客只能做「投一票」這件事
-      allow update: if isOwner() || isVoteBump(pid);
-
-      // 這次 update 只動了 tally 與 voteCount
+      // 這次 update 只碰了 tally 與 voteCount，其他欄位一個都沒動
       function onlyTally() {
         return request.resource.data.diff(resource.data)
                .affectedKeys().hasOnly(['tally', 'voteCount']);
       }
-      // tally 裡只有一個人的票數變動，而且剛好 +1
+
+      // 總票數剛好 +1，而且 tally 裡只有一個人的數字變動
       function bumpedOne() {
+        return request.resource.data.voteCount == resource.data.voteCount + 1
+            && request.resource.data.tally.diff(resource.data.tally)
+               .affectedKeys().size() == 1;
+      }
+
+      // 變動的那個人，必須就是這位使用者在同一批次裡寫進去的那張票所投的人。
+      // 用 getAfter 而不是 get：票與加票是同一個 batch，get 看到的是批次「之前」
+      // 的狀態，那時候票還不存在。
+      function matchesMyVote() {
+        let v = getAfter(/databases/$(database)/documents/votes/$(pid + '_' + request.auth.uid)).data;
         return request.resource.data.tally.diff(resource.data.tally)
-                 .affectedKeys().size() == 1
-            && request.resource.data.voteCount == resource.data.voteCount + 1;
-      }
-      // 變動的那個人，必須就是這位使用者剛寫進去的那張票所投的人
-      function matchesMyVote(pid) {
-        let picked = request.resource.data.tally
-                       .diff(resource.data.tally).affectedKeys();
-        let v = get(/databases/$(database)/documents/votes/
-                    $(pid + '_' + request.auth.uid)).data;
-        return picked.hasOnly([v.pick])
+                 .affectedKeys().hasOnly([v.pick])
             && request.resource.data.tally[v.pick]
-               == (v.pick in resource.data.tally
-                   ? resource.data.tally[v.pick] : 0) + 1;
+               == resource.data.tally.get(v.pick, 0) + 1
+            && v.pollId == pid;
       }
-      function isVoteBump(pid) {
+
+      function isVoteBump() {
         return request.auth != null
-            && resource.data.closed == false
-            && resource.data.answer == ''
+            && resource.data.get('closed', false) == false
+            && resource.data.get('answer', '') == ''
             && onlyTally()
             && bumpedOne()
-            && matchesMyVote(pid);
+            && matchesMyVote();
       }
+
+      allow read: if true;
+      allow create, delete: if isOwner();
+      allow update: if isOwner() || isVoteBump();
     }
 
-    // 一人一票：文件 id 必須是 {pollId}_{uid}，所以同一個人只佔得到一格。
+    // 一人一票：文件 id 固定是 {pollId}_{uid}，所以同一個人只佔得到一格。
     // 只准 create，不准改也不准刪 —— 投出去就算數。
     match /votes/{vid} {
-      allow read: if true;
+
+      function validVote() {
+        let d = request.resource.data;
+        return request.auth != null
+            && vid == d.pollId + '_' + request.auth.uid
+            && d.uid == request.auth.uid
+            && d.keys().hasOnly(['pollId', 'uid', 'pick', 'nick', 'at'])
+            && d.keys().hasAll(['pollId', 'uid', 'pick', 'nick', 'at'])
+            && d.pick is string
+            && d.nick is string
+            && d.nick.size() <= 16
+            && d.at is number
+            && exists(/databases/$(database)/documents/polls/$(d.pollId))
+            && d.pick in get(/databases/$(database)/documents/polls/$(d.pollId)).data.candidates
+            && get(/databases/$(database)/documents/polls/$(d.pollId)).data.get('closed', false) == false
+            && get(/databases/$(database)/documents/polls/$(d.pollId)).data.get('answer', '') == '';
+      }
+
+      // 票裡有訪客自取的暱稱，沒必要讓任何人整包撈走：只有本人與站長看得到。
+      allow read: if isOwner()
+                  || (request.auth != null && resource.data.uid == request.auth.uid);
+      allow create: if validVote();
       allow update, delete: if isOwner();
-      allow create: if request.auth != null
-        && vid == request.resource.data.pollId + '_' + request.auth.uid
-        && request.resource.data.uid == request.auth.uid
-        && request.resource.data.keys().hasOnly(
-             ['pollId', 'uid', 'pick', 'nick', 'at'])
-        && request.resource.data.pick is string
-        && request.resource.data.nick is string
-        && request.resource.data.nick.size() <= 16
-        // 只能投在候選名單內，而且那個預測還開著
-        && exists(/databases/$(database)/documents/polls/$(request.resource.data.pollId))
-        && request.resource.data.pick in
-             get(/databases/$(database)/documents/polls/
-                 $(request.resource.data.pollId)).data.candidates;
     }
   }
 }
