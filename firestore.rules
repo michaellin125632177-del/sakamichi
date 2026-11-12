@@ -159,32 +159,13 @@ service cloud.firestore {
       allow create: if validBet(bid);
     }
 
-    // 一人一票：文件 id 固定是 {pollId}_{uid}，所以同一個人只佔得到一格。
-    // 只准 create，不准改也不准刪 —— 投出去就算數。
-    // （舊的匿名投票留著，新的下注走 bets。）
+    // 舊的匿名投票。現在下注一律走 bets，這裡不再有人寫，
+    // 所以 create 直接關掉——留著就只是多一塊沒人用的攻擊面。
+    // 資料保留，歷來統計還接得上。
     match /votes/{vid} {
-
-      function validVote() {
-        let d = request.resource.data;
-        return request.auth != null
-            && vid == d.pollId + '_' + request.auth.uid
-            && d.uid == request.auth.uid
-            && d.keys().hasOnly(['pollId', 'uid', 'pick', 'nick', 'at'])
-            && d.keys().hasAll(['pollId', 'uid', 'pick', 'nick', 'at'])
-            && d.pick is string
-            && d.nick is string
-            && d.nick.size() <= 16
-            && d.at is number
-            && exists(/databases/$(database)/documents/polls/$(d.pollId))
-            && d.pick in get(/databases/$(database)/documents/polls/$(d.pollId)).data.candidates
-            && get(/databases/$(database)/documents/polls/$(d.pollId)).data.get('closed', false) == false
-            && get(/databases/$(database)/documents/polls/$(d.pollId)).data.get('answer', '') == '';
-      }
-
-      // 票裡有訪客自取的暱稱，沒必要讓任何人整包撈走：只有本人與站長看得到。
       allow read: if isOwner()
                   || (request.auth != null && resource.data.uid == request.auth.uid);
-      allow create: if validVote();
+      allow create: if false;
       allow update, delete: if isOwner();
     }
   }

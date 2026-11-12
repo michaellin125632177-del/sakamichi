@@ -1718,7 +1718,7 @@ function finishQuiz(){
 // 設計上最重要的一點：票數是用 FieldValue.increment 直接累加在 poll 文件裡，
 // 訪客只要讀那一筆就看得到全部票數。若改成「讀完每一張票再自己數」，
 // 500 票 × 100 個訪客就是 5 萬次讀取，免費額度一天就爆了。
-const POLL_COL='polls', VOTE_COL='votes';
+const POLL_COL='polls';
 const GROUP_BAR={nogi:'#9333ea',hinata:'#0284c7',sakura:'#ffffff',
                  keyaki:'#059669',aoba:'#06b6d4'};
 const NICK_MAX=16;
