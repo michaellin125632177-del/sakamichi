@@ -278,7 +278,13 @@ const mkPoll=(p,o={})=>p.evaluate(async o=>{
   S.chk('命中判定：沒投不算中', HB.noPick===false);
 
   await p.evaluate(()=>buildPollList()); await p.waitForTimeout(400);
-  S.chk('歷來面板掛在預測面板裡', (await p.locator('#poll-list .ph-box').count())===1);
+  S.chk('歷來面板與排行榜都掛在預測面板裡',
+        (await p.locator('#poll-list .ph-box').count())===2,
+        await p.locator('#poll-list .ph-box').count());
+  S.chk('一個是歷來預測結果、一個是賭盤排行榜',
+        (await p.locator('#poll-list .ph-box > summary').allTextContents())
+          .join('|')==='💰 賭盤排行榜|📊 歷來預測結果',
+        (await p.locator('#poll-list .ph-box > summary').allTextContents()).join('|'));
   S.chk('上面只留進行中的卡片',
         (await p.locator('#poll-list>.poll-card').count())===1,
         await p.locator('#poll-list>.poll-card').count());
