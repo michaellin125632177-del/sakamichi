@@ -300,6 +300,47 @@ const mkPoll=(p,o={})=>p.evaluate(async o=>{
   S.chk('舊的得票排行已經移除', await p.evaluate(()=>
     typeof voteRanking==='undefined'&&!document.querySelector('.pr-box')));
 
+  // ── 歷來那一列的管理按鈕（站長限定）──
+  S.chk('站長在歷來每一列都看得到管理按鈕',
+        (await p.locator('.ph-row .poll-admin').count())===3,
+        await p.locator('.ph-row .poll-admin').count());
+  S.chk('每一列都刪得掉',
+        (await p.locator('.ph-row .poll-admin .pg-btn.danger').count())===3);
+  S.chk('已開獎的不給「重新開放」（答案還在，按了也沒用）',
+        !(await p.locator('.ph-row .poll-admin').first().textContent()).includes('重新開放'),
+        await p.locator('.ph-row .poll-admin').first().textContent());
+  S.chk('管理按鈕放在展開的內容裡，不在 summary（免得點了就收合）',
+        await p.evaluate(()=>[...document.querySelectorAll('.ph-row .poll-admin')]
+          .every(b=>!b.closest('summary'))));
+  // 截止但還沒開獎的，要給得回「重新開放」
+  await p.evaluate(async()=>{
+    const id=pollId('nogi',91,'sel');
+    await db.collection('polls').doc(id).set({group:'nogi',num:91,kind:'sel',
+      title:'截止但沒開獎',deadline:'',candidates:pollCandidates('nogi'),
+      tally:{'賀喜遥香':2},voteCount:2,answer:'',closed:true,createdAt:91});
+  });
+  await p.waitForTimeout(1000);
+  await p.evaluate(()=>{document.querySelector('.ph-box').open=true;
+    document.querySelectorAll('.ph-row').forEach(r=>r.open=true);});
+  await p.waitForTimeout(300);
+  S.chk('截止但沒開獎的給得回「重新開放」',
+        (await p.locator('.ph-row .poll-admin').allTextContents())
+          .some(t=>t.includes('重新開放')),
+        (await p.locator('.ph-row .poll-admin').allTextContents()).join(' | '));
+  // 真的刪得掉
+  const before=await p.evaluate(()=>pollData.length);
+  await p.evaluate(()=>{
+    const r=[...document.querySelectorAll('.ph-row')].find(x=>
+      x.textContent.includes('第91張'));
+    const btn=r.querySelector('.poll-admin .pg-btn.danger');
+    btn.click(); btn.click();          // 需要按兩次確認
+  });
+  await p.waitForTimeout(1100);
+  S.chk('按兩次就真的刪掉了',
+        await p.evaluate(n=>pollData.length===n-1,before),
+        await p.evaluate(()=>pollData.length)+' vs '+before);
+
+
   // ── 刪掉再重開同一個預測（回歸）──
   // 舊版的文件 id 固定是 {團}_{編號}，刪掉重開會沿用同一個 id，於是
   // 新預測繼承了舊預測的狀態：畫面顯示「你投過了」其實沒投，而且
@@ -392,6 +433,11 @@ const mkPoll=(p,o={})=>p.evaluate(async o=>{
   await p.click('#poll-btn'); await p.waitForTimeout(600);
   S.chk('訪客看得到預測', (await p.locator('.poll-card').count())>0);
   S.chk('訪客看不到管理按鈕', (await p.locator('.poll-admin').count())===0);
+  await p.evaluate(()=>{const b=document.querySelector('.ph-box');
+    if(b){b.open=true;document.querySelectorAll('.ph-row').forEach(r=>r.open=true);}});
+  await p.waitForTimeout(300);
+  S.chk('訪客在歷來那邊也看不到管理按鈕',
+        (await p.locator('.ph-row .poll-admin').count())===0);
   await p.fill('#poll-nick','路過的');
   await p.selectOption('#pv-sel-'+P46,'遠藤さくら'); await p.waitForTimeout(200);
   await p.click('.poll-pick .btn-save'); await p.waitForTimeout(1400);

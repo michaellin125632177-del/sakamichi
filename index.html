@@ -1650,18 +1650,25 @@ function buildPollCard(p){
     box.appendChild(buildVotePicker(p));
   }
 
-  if(canEdit()){
-    const bar=elWith('div','poll-admin');
+  if(canEdit())box.appendChild(buildPollAdmin(p));
+  return box;
+}
+// 站長才看得到。卡片與歷來那一列共用。
+function buildPollAdmin(p){
+  const bar=elWith('div','poll-admin');
+  // 已經對到答案的沒辦法「重新開放」——答案還在，open 判定一樣會是 false，
+  // 按了也沒有用，所以那種情況乾脆不給這顆按鈕。
+  if(!pollAnswer(p)){
     const cl=document.createElement('button');
     cl.className='pg-btn'; cl.textContent=p.closed?'↩ 重新開放':'⏹ 提前截止';
     cl.onclick=()=>togglePollClosed(p.id,!p.closed);
-    const del=document.createElement('button');
-    del.className='pg-btn danger'; del.textContent='🗑 刪除';
-    del.onclick=()=>deletePoll(p.id,p);
-    bar.append(cl,del);
-    box.appendChild(bar);
+    bar.appendChild(cl);
   }
-  return box;
+  const del=document.createElement('button');
+  del.className='pg-btn danger'; del.textContent='🗑 刪除';
+  del.onclick=()=>deletePoll(p.id,p);
+  bar.appendChild(del);
+  return bar;
 }
 function buildVotePicker(p){
   const wrap=elWith('div','poll-pick');
@@ -1774,6 +1781,9 @@ function buildHistory(){
         !!ans&&ans.split('、').includes(x.name), !!mine&&mine.pick===x.name)));
       row.appendChild(wrap);
     } else row.appendChild(elWith('div','poll-empty','沒有人投票。'));
+    // 管理按鈕放在展開後的內容裡，不放 summary——放在 summary 裡
+    // 點按鈕會順手把那一列收合起來。
+    if(canEdit())row.appendChild(buildPollAdmin(p));
     box.appendChild(row);
   });
   return box;
