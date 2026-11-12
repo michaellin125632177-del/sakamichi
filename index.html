@@ -1946,6 +1946,10 @@ function pollCandsFor(g,type,subject){
 }
 function pollOpen(p){
   if(p.closed)return false;
+  // 結算過就永遠關閉。否則會出現這種情況：答案是從單曲資料自動對上的，
+  // 站長把那張單曲刪掉（或移進回收桶），答案就不見了、盤口自動重新打開，
+  // 結算後才進來的注永遠領不到錢——錢扣了卻沒人發得出來。
+  if(p.settled)return false;
   // 答案可能是自動從單曲資料對上的，不是只看 p.answer 這個欄位，
   // 否則單曲一公布、答案都攤在畫面上了，還能繼續下注。
   if(pollAnswer(p))return false;
@@ -2180,6 +2184,24 @@ function buildPollAdmin(p){
     };
     bar.appendChild(st);
   }
+  // 舊版的漏洞可能讓結算後還有人押得進來，那些注領不到錢，要退
+  if(p.settled){
+    const rf=document.createElement('button');
+    rf.className='pg-btn'; rf.textContent='↩ 退還結算後誤收的注';
+    rf.onclick=async()=>{
+      rf.disabled=true; const old=rf.textContent; rf.textContent='檢查中…';
+      try{
+        const r=await refundLateBets(p.id);
+        showMsg('poll-msg','ok',r.n
+          ? ('✓ 已退還 '+r.n+' 注、共 '+coin(r.total)+'。')
+          : '沒有需要退還的注。',true);
+        buildPollList();
+      }catch(e){
+        showMsg('poll-msg','err','退還失敗：'+(e&&e.message||e),false);
+      }finally{ rf.disabled=false; rf.textContent=old; }
+    };
+    bar.appendChild(rf);
+  }
   const del=document.createElement('button');
   del.className='pg-btn danger'; del.textContent='🗑 刪除';
   del.onclick=()=>deletePoll(p.id,p);
@@ -2412,6 +2434,11 @@ function betResults(p){
   return (p.payouts||[]).map(x=>({name:x.name,stake:x.stake||0,
     payout:x.payout||0,hit:(x.payout||0)>(x.stake||0)}));
 }
+// 真的發出去多少。不能拿 p.pool 來顯示——彩池是即時累加的，
+// 結算之後若又被加注，數字就會跟實際發出去的對不上。
+function paidOf(p){
+  return betResults(p).reduce((a,r)=>a+(r.payout||0),0);
+}
 function betRanking(){
   const by={};
   pollData.filter(p=>p.settled).forEach(p=>{
@@ -2526,7 +2553,7 @@ function buildHistory(){
         elWith('span','ph-ans','答案：'+ans),
         elWith('span','ph-mark'+(ok?' is-hit':''),ok?'✓ 命中':'✗ 落空'));
       if(p.pool)s2.appendChild(elWith('span','ph-pool',
-        p.settled?('已發 '+coin(p.pool)):('待結算 '+coin(p.pool))));
+        p.settled?('已發 '+coin(paidOf(p))):('待結算 '+coin(p.pool))));
     }
     if(mine)s2.appendChild(elWith('span','ph-mine'+
       (ans&&hitBy(ans,[mine.pick])?' is-hit':''),'你：'+mine.pick));
@@ -2589,6 +2616,39 @@ async function settlePoll(id){
     settled:true,settledAt:Date.now(),results});
   await batch.commit();
   return r;
+}
+
+// 結算之後才進來的注（上面那個 bug 造成的）。錢已經從人家帳戶扣掉，
+// 但結算只能跑一次，這些注永遠領不到——只能原額退還。
+// 用注單上的 refunded 旗標記錄，重跑不會退第二次。
+async function refundLateBets(id){
+  if(!canEdit())throw new Error('只有站長能處理');
+  const p=pollData.find(x=>x.id===id);
+  if(!p)throw new Error('找不到這個預測');
+  if(!p.settled)throw new Error('這個預測還沒結算');
+  const snap=await db.collection(BET_COL).where('pollId','==',id).get();
+  const late=[];
+  snap.forEach(d=>{
+    const b=d.data()||{};
+    if(!b.refunded&&(b.at||0)>(p.settledAt||0))late.push({__id:d.id,...b});
+  });
+  if(!late.length)return {n:0,total:0};
+  const batch=db.batch();
+  let total=0;
+  late.forEach(b=>{
+    const amt=b.stake||0; total+=amt;
+    batch.update(db.collection(WALLET_COL).doc(b.uid),
+      new firebase.firestore.FieldPath('balance'),
+      firebase.firestore.FieldValue.increment(amt));
+    batch.update(db.collection(BET_COL).doc(b.__id),{refunded:true});
+  });
+  // 一併記進 results，排行榜才不會把這些注算成白輸的錢
+  batch.update(db.collection(POLL_COL).doc(id),{
+    results:[...(p.results||[]),
+      ...late.map(b=>({name:b.name,stake:b.stake||0,
+                       payout:b.stake||0,hit:false}))].slice(0,500)});
+  await batch.commit();
+  return {n:late.length,total};
 }
 
 // ── 管理：建立／截止／刪除 ──

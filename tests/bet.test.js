@@ -286,6 +286,53 @@ const seedSingles=p=>p.evaluate(async()=>{
   });
   S.chk('自己那一列會標起來', mine.n===1&&mine.txt.includes('阿坂'), mine.txt);
 
+  // ── 結算之後不該再收注；萬一收了要退得回來 ──
+  // 回報的狀況：答案是從單曲資料自動對上的，站長把那張單曲刪掉，答案
+  // 就不見了、盤口自動重新打開，結算後才進來的注永遠領不到錢。
+  const LATE=await p.evaluate(async()=>{
+    const wait=ms=>new Promise(r=>setTimeout(r,ms));
+    const id='late_test_1';
+    await db.collection('polls').doc(id).set({group:'nogi',num:97,kind:'sel',
+      title:'結算後補注',deadline:'',candidates:['小川彩','賀喜遥香'],
+      tally:{'小川彩':1},voteCount:1,pool:1700,settled:true,settledAt:1000,
+      answer:'',closed:false,createdAt:1,
+      results:[{name:'先押的',stake:300,payout:300,hit:true}]});
+    for(const [uid,name,stake,at,refunded] of [
+      ['lateA','遲到甲',500,2000,false],
+      ['lateB','遲到乙',900,3000,false],
+      ['early','先押的',300,500,false],
+      ['done','已退過',100,2500,true]]){
+      await db.collection('wallets').doc(uid).set({name,balance:0,createdAt:1});
+      await db.collection('bets').doc(id+'_'+uid).set(
+        {pollId:id,uid,name,pick:'賀喜遥香',stake,at,refunded});
+    }
+    await wait(700);
+    const pp=pollData.find(x=>x.id===id)||{};
+    const before={open:pollOpen(pp),paid:paidOf(pp),pool:pp.pool};
+    const r1=await refundLateBets(id); await wait(500);
+    const r2=await refundLateBets(id);          // 再跑一次不該重複退
+    const after=pollData.find(x=>x.id===id)||{};
+    const w=k=>window.__store.wallets[k].balance;
+    return {before,r1,r2,wA:w('lateA'),wB:w('lateB'),
+      wEarly:w('early'),wDone:w('done'),
+      rows:(after.results||[]).length,paidAfter:paidOf(after)};
+  });
+  S.chk('結算過的盤口不會再開放下注（就算答案不見了）',
+        LATE.before.open===false, LATE.before.open);
+  S.chk('「已發」算的是真的發出去多少，不是現在的彩池',
+        LATE.before.paid===300&&LATE.before.pool===1700,
+        '已發 '+LATE.before.paid+' / 彩池 '+LATE.before.pool);
+  S.chk('只退結算之後才進來的注', LATE.r1.n===2, JSON.stringify(LATE.r1));
+  S.chk('退的是原注額', LATE.r1.total===1400, LATE.r1.total);
+  S.chk('錢真的回到他們帳上', LATE.wA===500&&LATE.wB===900,
+        LATE.wA+'/'+LATE.wB);
+  S.chk('結算前就押的不會被退', LATE.wEarly===0, LATE.wEarly);
+  S.chk('已經退過的不會再退一次', LATE.wDone===0, LATE.wDone);
+  S.chk('重跑不會重複退', LATE.r2.n===0, JSON.stringify(LATE.r2));
+  S.chk('退還的注也記進 results（排行榜才不會算成白輸）',
+        LATE.rows===3&&LATE.paidAfter===1700,
+        LATE.rows+' 列 / 已發 '+LATE.paidAfter);
+
   // 還沒開獎不能結算
   const early=await p.evaluate(async()=>{
     const id=pollId('nogi',95,'sel');

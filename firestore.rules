@@ -15,7 +15,11 @@ service cloud.firestore {
 
     function pollOpenFor(pid) {
       let p = get(/databases/$(database)/documents/polls/$(pid)).data;
-      return p.get('closed', false) == false && p.get('answer', '') == '';
+      // settled 也要擋：結算之後才進來的注永遠領不到錢（結算只能跑一次），
+      // 等於把人家的籌碼吃掉。前端已經擋了，這裡是第二道。
+      return p.get('closed', false) == false
+          && p.get('answer', '') == ''
+          && p.get('settled', false) == false;
     }
 
     function validBet(bid) {
