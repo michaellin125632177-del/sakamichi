@@ -560,6 +560,19 @@ body.is-guest .edit-only{display:none!important;}
 .pv-fill{height:100%;background:#9333ea;border-radius:5px;}
 .pv-fill.is-ans{background:#f59e0b;}
 .pv-n{width:3.6em;text-align:right;color:#9370c0;flex-shrink:0;}
+/* 歷來得票排行 */
+.pr-box{margin-top:4px;border:1px solid #2a1250;border-radius:10px;
+  padding:9px 11px;background:rgba(255,255,255,.015);}
+.pr-box summary{cursor:pointer;font-size:.82rem;color:#c084fc;font-weight:600;
+  list-style:none;}
+.pr-box summary::-webkit-details-marker{display:none;}
+.pr-box summary::before{content:'▸ ';}
+.pr-box[open] summary::before{content:'▾ ';}
+.pr-box[open] summary{margin-bottom:9px;}
+.pr-row{display:flex;align-items:center;gap:7px;font-size:.78rem;}
+.pr-pos{width:1.7em;text-align:center;color:#9370c0;flex-shrink:0;}
+.pr-bar{width:3px;height:15px;border-radius:2px;flex-shrink:0;}
+.pr-hit{width:3.4em;text-align:right;color:#fcd34d;flex-shrink:0;font-size:.72rem;}
 
 /* ══════════════════════════════════════════
    手機版的可讀性與可點性
@@ -595,7 +608,7 @@ body.is-guest .edit-only{display:none!important;}
 
   /* ── 觸控目標 ── */
   .poll-pick select{min-height:38px;font-size:.86rem;}
-  .pv-row{font-size:.82rem;}
+  .pv-row,.pr-row{font-size:.82rem;}
   .fm-pick{font-size:.76rem;min-height:34px;padding-top:6px;padding-bottom:6px;}
   .card-share,.card-edit-btn{min-height:36px;padding:7px 14px;font-size:.8rem;}
   .pg-btn{min-height:36px;min-width:36px;}
@@ -1418,6 +1431,8 @@ function fromDoc(id,data){
 // 訪客只要讀那一筆就看得到全部票數。若改成「讀完每一張票再自己數」，
 // 500 票 × 100 個訪客就是 5 萬次讀取，免費額度一天就爆了。
 const POLL_COL='polls', VOTE_COL='votes';
+const GROUP_BAR={nogi:'#9333ea',hinata:'#0284c7',sakura:'#ffffff',
+                 keyaki:'#059669',aoba:'#06b6d4'};
 const NICK_KEY='sakamichi-nick';
 const NICK_MAX=16;
 let pollData=[], pollReady=false, myVotes={};   // pollId -> {pick,nick}
@@ -1546,9 +1561,10 @@ function buildPollList(){
     host.appendChild(elWith('div','poll-empty',
       canEdit()?'還沒有任何預測。按下面的「＋ 開一個新預測」建立。'
                :'目前沒有進行中的預測，下一張單曲公布時再來看看。'));
-    return;
+    return;   // 沒有預測就沒有票可以統計，排行也跟著省略
   }
   pollData.forEach(p=>host.appendChild(buildPollCard(p)));
+  host.appendChild(buildVoteRanking());
 }
 function buildPollCard(p){
   const box=elWith('div','poll-card');
@@ -1630,6 +1646,74 @@ function buildVotePicker(p){
   });
   wrap.append(sel,btn);
   return wrap;
+}
+
+// ── 歷來得票排行（投票參考用）──
+// 只統計「這位訪客本來就看得到票數」的那些預測：已開獎／已截止的，
+// 加上他自己投過的。否則只要還有一個進行中的預測，這張表就等於把
+// 當前票數攤開給還沒投的人看，「投完才看得到」就形同虛設。
+function visibleTallyPolls(){
+  return pollData.filter(p=>!pollOpen(p)||myVoteOn(p.id));
+}
+function voteRanking(){
+  const sum={},hit={},by={};
+  visibleTallyPolls().forEach(p=>{
+    const t=p.tally||{};
+    Object.keys(t).forEach(n=>{
+      if(!(t[n]>0))return;
+      sum[n]=(sum[n]||0)+t[n];
+      by[n]=by[n]||{}; by[n][p.group]=(by[n][p.group]||0)+t[n];
+    });
+    const ans=pollAnswer(p);
+    if(ans)ans.split('、').forEach(n=>{hit[n]=(hit[n]||0)+1;});
+  });
+  return Object.keys(sum).map(name=>({
+    name, votes:sum[name], hits:hit[name]||0,
+    group:Object.keys(by[name]).reduce((a,g)=>by[name][g]>by[name][a]?g:a,
+                                       Object.keys(by[name])[0])
+  })).sort((a,b)=>b.votes-a.votes||b.hits-a.hits
+                 ||a.name.localeCompare(b.name,'ja'));
+}
+const PR_TOP=15;
+function buildVoteRanking(){
+  const box=elWith('details','pr-box');
+  const sm=document.createElement('summary');
+  sm.textContent='🏆 歷來得票排行';
+  box.appendChild(sm);
+  const polls=visibleTallyPolls(), list=voteRanking();
+  if(!list.length){
+    box.appendChild(elWith('div','poll-empty',
+      pollData.length?'等你投完票或預測開獎後，這裡會統計歷來得票。'
+                     :'還沒有任何預測。'));
+    return box;
+  }
+  const max=list[0].votes;
+  const wrap=elWith('div','pv');
+  const medals={1:'🥇',2:'🥈',3:'🥉'};
+  let rank=0,prevV=null,prevH=null,i=0;
+  list.slice(0,PR_TOP).forEach(r=>{
+    i++;
+    if(r.votes!==prevV||r.hits!==prevH){rank=i;prevV=r.votes;prevH=r.hits;}
+    const row=elWith('div','pr-row');
+    row.title=r.name+'：歷來 '+r.votes+' 票'+(r.hits?('，中選 '+r.hits+' 次'):'');
+    row.append(
+      elWith('div','pr-pos',medals[rank]||String(rank)),
+      elWith('div','pr-bar','','background:'+(GROUP_BAR[r.group]||'#9333ea')),
+      elWith('div','pv-name',r.name),
+      (()=>{const t=elWith('div','pv-track');
+            t.appendChild(elWith('div','pv-fill','',
+              'width:'+Math.round(r.votes/max*100)+'%'));
+            return t;})(),
+      elWith('div','pv-n',r.votes+' 票'),
+      elWith('div','pr-hit',r.hits?('中 '+r.hits):''));
+    wrap.appendChild(row);
+  });
+  box.appendChild(wrap);
+  const more=list.length>PR_TOP?('，只列前 '+PR_TOP+' 名'):'';
+  box.appendChild(elWith('div','poll-note',
+    '統計 '+polls.length+' 個預測、'+list.length+' 位成員'+more+
+    '。進行中而你還沒投的預測不會算進來。'));
+  return box;
 }
 
 // ── 管理：建立／截止／刪除 ──
