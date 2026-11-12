@@ -2003,12 +2003,34 @@ async function placeBet(pid,pick,stake){
     new firebase.firestore.FieldPath('lastBet'),pid);
   await batch.commit();
   myVotes[pid]={pick,nick:w.name||'',stake:amt};
-  try{localStorage.setItem('sakamichi-votes',JSON.stringify(myVotes));}catch(e){}
+  saveMyVotes();
 }
 
+// 這份記錄要分帳號存。原本整個瀏覽器共用一把鑰匙，結果 A 下注之後
+// 換 B 登入，B 會被告知「你押過了」（其實伺服器根本沒擋他）。
+function votesKey(){return 'sakamichi-votes:'+((authUser&&authUser.uid)||'anon');}
 function loadMyVotes(){
-  try{myVotes=JSON.parse(localStorage.getItem('sakamichi-votes')||'{}')||{};}
+  try{myVotes=JSON.parse(localStorage.getItem(votesKey())||'{}')||{};}
   catch(e){myVotes={};}
+}
+function saveMyVotes(){
+  try{localStorage.setItem(votesKey(),JSON.stringify(myVotes));}catch(e){}
+}
+// 真正的依據是伺服器上的注單（bets 的文件 id 就是 預測id_uid）。
+// 登入後拉一次自己的注單覆蓋本機記錄，這樣換裝置、換瀏覽器也看得到
+// 自己押過什麼。讀取量是「自己押過幾注」，不是全站的注單。
+async function syncMyBets(){
+  if(!db||!authUser){myVotes={};return;}
+  loadMyVotes();                       // 先用本機的頂著，避免畫面空一下
+  try{
+    const snap=await db.collection(BET_COL).where('uid','==',authUser.uid).get();
+    const out={};
+    snap.forEach(d=>{const b=d.data()||{};
+      if(b.pollId)out[b.pollId]={pick:b.pick,nick:b.name||'',stake:b.stake};});
+    myVotes=out;
+    saveMyVotes();
+  }catch(e){ console.warn('同步自己的注單失敗',e); }
+  buildPollList();
 }
 function myVoteOn(pid){return myVotes[pid]||null;}
 // 本機記的「我投過了」有可能跟雲端對不上：預測被刪掉了，或是票數被重置。
@@ -2022,8 +2044,7 @@ function reconcileMyVotes(){
     const ok=p&&v&&((p.tally||{})[v.pick]>0);
     if(!ok){delete myVotes[pid];changed=true;}
   });
-  if(changed)try{localStorage.setItem('sakamichi-votes',JSON.stringify(myVotes));}
-             catch(e){}
+  if(changed)saveMyVotes();
 }
 
 // ── 畫面 ──
@@ -2712,6 +2733,8 @@ try{
     firebaseAuth.setPersistence(firebase.auth.Auth.Persistence.LOCAL).catch(()=>{});
     firebaseAuth.onAuthStateChanged(u=>{
       authUser=u||null; authReady=true; applyAuthUI(); watchWallet();
+      // 換帳號就換一份「我押過什麼」，並以伺服器上的注單為準
+      syncMyBets();
       // 登入後才執行需要寫入的維護工作
       if(canEdit())['nogi','hinata','sakura','keyaki','aoba'].forEach(g=>{sweepTrash(g);repairNames(g);backfillRows(g);});
       if(canEdit())migrateMemberOverrides();

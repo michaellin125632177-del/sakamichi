@@ -301,6 +301,54 @@ const seedSingles=p=>p.evaluate(async()=>{
         await p.evaluate(()=>{openPollModal();
           return !!document.querySelector('.pg-btn.settle')
             ||pollData.every(x=>x.settled||!pollAnswer(x)||!(x.pool>0));}));
+
+  // ── 同一個瀏覽器換帳號 ──
+  // 回報：開了測試帳號想試多人下注，新帳號一進來就被說「你押過了」。
+  // 原因是「我押過什麼」存在 localStorage，而且整個瀏覽器共用一份。
+  await p.close();
+  p=await openPage(b,{viewport:{width:900,height:950},onError:S.onError});
+  await seed(p);
+  const SW=await p.evaluate(async()=>{
+    const wait=ms=>new Promise(r=>setTimeout(r,ms));
+    // 用還沒有單曲資料的編號，否則 center 一存在就自動視為已開獎
+    const id=pollId('nogi',99,'sel');
+    await db.collection('polls').doc(id).set({group:'nogi',num:99,kind:'sel',
+      title:'換帳號測試',deadline:'',candidates:pollCandidates('nogi'),
+      tally:{},voteCount:0,pool:0,settled:false,answer:'',closed:false,
+      createdAt:1});
+    await wait(500);
+    await registerPlayer('甲帳號','pw123456'); await wait(500);
+    await placeBet(id,'小川彩',300);         await wait(300);
+    const A={mine:(myVoteOn(id)||{}).pick,bal:myWallet.balance};
+
+    await firebaseAuth.signOut();            await wait(400);
+    await registerPlayer('乙帳號','pw123456'); await wait(700);
+    const B={mine:myVoteOn(id),bal:myWallet.balance};
+    let placed='';
+    try{ await placeBet(id,'賀喜遥香',100); await wait(300);
+         placed=(myVoteOn(id)||{}).pick; }
+    catch(e){ placed='ERR:'+e.message; }
+    const B2={pick:placed,bal:myWallet.balance};
+
+    // 清掉本機記錄再登回甲：以伺服器上的注單為準，應該還看得到那一注
+    await firebaseAuth.signOut();
+    try{localStorage.clear();}catch(e){}
+    await wait(300);
+    await loginPlayer('甲帳號','pw123456');  await wait(900);
+    return {A,B,B2,back:(myVoteOn(id)||{}).pick,
+            backBal:myWallet?myWallet.balance:null};
+  });
+  S.chk('甲押完看得到自己那一注', SW.A.mine==='小川彩', JSON.stringify(SW.A));
+  S.chk('甲的籌碼扣掉 300', SW.A.bal===700, SW.A.bal);
+  S.chk('換成乙登入後，不會被誤判成「你押過了」', SW.B.mine===null,
+        JSON.stringify(SW.B.mine));
+  S.chk('乙的籌碼是全新的 1000', SW.B.bal===1000, SW.B.bal);
+  S.chk('乙押得下去（這就是回報的狀況）', SW.B2.pick==='賀喜遥香', SW.B2.pick);
+  S.chk('乙記到的是自己押的人', SW.B2.bal===900, SW.B2.bal);
+  S.chk('甲重新登入（本機記錄已清空）仍看得到自己那一注',
+        SW.back==='小川彩', SW.back);
+  S.chk('甲的籌碼沒有被乙影響', SW.backBal===700, SW.backBal);
+
   await b.close();
   const r=S.report();
   process.exit(r.fail||r.errors?1:0);
