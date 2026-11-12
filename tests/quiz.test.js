@@ -95,6 +95,46 @@ const S=suite('冷知識測驗與開盤台');
   S.chk('同期題的正解真的同期', K.sameGenOk);
   S.chk('同期題的干擾選項都不同期', K.sameGenDistract);
 
+  // ── 出身地與身高（資料來自現役成員名冊）──
+  const H=await p.evaluate(()=>{
+    const all=[];
+    for(let i=0;i<40;i++)all.push(...buildQuiz());
+    const home=all.filter(q=>/的出身地是哪裡/.test(q.q));
+    const tall=all.filter(q=>/身高最高/.test(q.q));
+    const look=n=>{let r=null;ALL_GROUPS.forEach(g=>{
+      const a=getAllMembers(g); if(a[n]&&(a[n].home||a[n].ht))r=a[n];});return r;};
+    let withHome=0,withHt=0;
+    ALL_GROUPS.forEach(g=>Object.values(getAllMembers(g)).forEach(m=>{
+      if(m.home)withHome++; if(m.ht)withHt++;}));
+    return {
+      homeN:home.length, tallN:tall.length, withHome, withHt,
+      // 出身地：正解要真的是那個人的出身地
+      homeOk:home.every(q=>{
+        const m=/^(.+?) 的出身地/.exec(q.q); if(!m)return false;
+        const info=look(m[1]); return info&&info.home===q.answer;}),
+      homeUniq:home.every(q=>new Set(q.options).size===4),
+      // 身高：正解要真的最高，而且跟第二名差距夠大
+      tallOk:tall.every(q=>{
+        const hs=q.options.map(n=>(look(n)||{}).ht);
+        if(hs.some(h=>!h))return false;
+        return (look(q.answer)||{}).ht===Math.max(...hs);}),
+      tallGap:tall.every(q=>{
+        const hs=q.options.map(n=>(look(n)||{}).ht).sort((a,b)=>b-a);
+        return hs[0]-hs[1]>=2;}),
+      // 沒有這筆資料的人不該被抽出來當題目
+      tallAllHave:tall.every(q=>q.options.every(n=>(look(n)||{}).ht))
+    };
+  });
+  S.chk('名冊裡有出身地的成員', H.withHome>=99, H.withHome+' 人');
+  S.chk('名冊裡有身高的成員', H.withHt>=99, H.withHt+' 人');
+  S.chk('出得到「出身地」題', H.homeN>0, H.homeN);
+  S.chk('出身地的正解跟名冊一致', H.homeOk);
+  S.chk('出身地的四個選項不重複', H.homeUniq);
+  S.chk('出得到「誰最高」題', H.tallN>0, H.tallN);
+  S.chk('最高的那個人真的最高', H.tallOk);
+  S.chk('最高的跟第二名至少差 2cm（不然等於擲骰子）', H.tallGap);
+  S.chk('沒登記身高的人不會被抽進選項', H.tallAllHave);
+
   // ── 答題與獎金 ──
   await p.click('#poll-btn'); await p.waitForTimeout(500);
   await p.evaluate(()=>setPollTab('quiz')); await p.waitForTimeout(400);
