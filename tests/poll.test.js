@@ -114,6 +114,24 @@ const mkPoll=(p,o={})=>p.evaluate(async o=>{
   S.chk('投完看得到票數', V.bars===1, V.bars);
   S.chk('投完就不能再投', V.stillPicker===0, V.stillPicker);
   S.chk('暱稱記在這台裝置上', V.nickSaved==='坂道老司機', V.nickSaved);
+  // 改了暱稱但沒投票也要記住（原本只有投票成功才存）
+  await p.fill('#poll-nick','改個新名字');
+  await p.waitForTimeout(250);
+  S.chk('邊打邊存，不必投票也記得住',
+        await p.evaluate(()=>localStorage.getItem('sakamichi-nick'))==='改個新名字',
+        await p.evaluate(()=>localStorage.getItem('sakamichi-nick')));
+  S.chk('重新打開面板會帶回來', await p.evaluate(()=>{
+    closeModal('pollModal'); document.getElementById('poll-nick').value='';
+    openPollModal();
+    return document.getElementById('poll-nick').value==='改個新名字';}));
+  await p.fill('#poll-nick','  前後有空白  '); await p.waitForTimeout(250);
+  S.chk('存起來的是清理過的',
+        await p.evaluate(()=>localStorage.getItem('sakamichi-nick'))==='前後有空白',
+        JSON.stringify(await p.evaluate(()=>localStorage.getItem('sakamichi-nick'))));
+  await p.fill('#poll-nick',''); await p.waitForTimeout(250);
+  S.chk('清空欄位就把記錄也清掉',
+        await p.evaluate(()=>localStorage.getItem('sakamichi-nick'))===null);
+  await p.fill('#poll-nick','坂道老司機'); await p.waitForTimeout(250);
 
   // 第二票投別人，票數要分開累加
   await p.evaluate(async id=>{
