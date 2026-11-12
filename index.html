@@ -1595,17 +1595,27 @@ function coin(n){return (n||0).toLocaleString('en-US')+' '+COIN;}
 // 想要的流量。
 //
 // ※ 分數是在瀏覽器算的，規則沒辦法驗證「你真的答對幾題」。所以規則能
-//   保證的只有「一天最多領 QUIZ_MAX」，擋不住有人直接宣稱滿分。
-//   這是這個設計的已知上限，不是疏漏。
+//   保證的只有「一天最多領 QUIZ_DAILY 次、每次最多 QUIZ_MAX」，擋不住
+//   有人直接宣稱滿分。這是這個設計的已知上限，不是疏漏。
 const QUIZ_N=10, QUIZ_PER=10, QUIZ_MAX=QUIZ_N*QUIZ_PER;
+// 一天最多領 3 次（3×100＝300），領完只能純練習
+const QUIZ_DAILY=3, QUIZ_DAY_MAX=QUIZ_DAILY*QUIZ_MAX;
 let quizState=null;
 
+// 一律用台灣時間（UTC+8）算「今天」，不看使用者裝置的時區。
+// 規則那邊只看得到伺服器時間，兩邊必須用同一套算法才對得起來；
+// 順便讓所有人共用同一個重置時刻（台灣的午夜）。
 function today(){
-  const d=new Date();
-  return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+
-         '-'+String(d.getDate()).padStart(2,'0');
+  return new Date(Date.now()+8*3600*1000).toISOString().slice(0,10);
 }
-function quizDoneToday(){return !!(myWallet&&myWallet.quizDay===today());}
+// 今天已經領過幾次、領了多少。跨到隔天就自動歸零（日期對不上）
+function quizTakenToday(){
+  return (myWallet&&myWallet.quizDay===today())?(myWallet.quizCount||0):0;
+}
+function quizGainToday(){
+  return (myWallet&&myWallet.quizDay===today())?(myWallet.quizGain||0):0;
+}
+function quizDoneToday(){return quizTakenToday()>=QUIZ_DAILY;}
 
 function pick(arr){return arr[Math.floor(Math.random()*arr.length)];}
 function shuffle(a){
@@ -1742,10 +1752,16 @@ function finishQuiz(){
     a+(quizState.answers[i]===q.answer?1:0),0);
   quizState.done=true;
   const gain=quizState.score*QUIZ_PER;
-  if(gain>0&&!quizDoneToday()){
+  // 這一份到底有沒有領到錢要當場記下來：寫入之後次數就變了，
+  // 畫面再去問「今天領完了沒」會把剛剛成功的這次誤判成沒領到。
+  quizState.paid=(gain>0&&!quizDoneToday())?gain:0;
+  if(quizState.paid){
+    const d=today(), same=!!(myWallet&&myWallet.quizDay===d);
     db.collection(WALLET_COL).doc(authUser.uid).update({
       balance:firebase.firestore.FieldValue.increment(gain),
-      quizDay:today(),quizGain:gain
+      quizDay:d,
+      quizCount:(same?(myWallet.quizCount||0):0)+1,
+      quizGain:(same?(myWallet.quizGain||0):0)+gain
     }).catch(e=>showMsg('poll-msg','err','領獎失敗：'+e.message,false));
   }
   buildPollList();
@@ -2161,12 +2177,17 @@ function buildQuizBox(){
   const done=quizDoneToday();
   if(!quizState){
     box.appendChild(elWith('div','lg-title','冷知識測驗'));
+    const taken=quizTakenToday();
     box.appendChild(elWith('div','lg-note',
       QUIZ_N+' 題，全部從站上的資料出。答對一題 '+QUIZ_PER+' 坂幣，'+
-      '滿分 '+QUIZ_MAX+'。一天只能領一次獎金，但隨時可以再玩。'));
+      '滿分 '+QUIZ_MAX+'。一天最多領 '+QUIZ_DAILY+' 次（共 '+QUIZ_DAY_MAX+
+      ' 坂幣），領完還是可以繼續玩，只是不計獎金。'));
     if(done)box.appendChild(elWith('div','qz-done',
-      '今天的獎金已經領過了（'+coin(myWallet.quizGain||0)+'）。'+
+      '今天的 '+QUIZ_DAILY+' 次獎金都領完了（共 '+coin(quizGainToday())+'）。'+
       '現在開始只能練習，不計獎金。'));
+    else if(taken)box.appendChild(elWith('div','lg-note',
+      '今天已經領了 '+taken+' / '+QUIZ_DAILY+' 次（'+coin(quizGainToday())+
+      '），還可以領 '+(QUIZ_DAILY-taken)+' 次。'));
     const b=document.createElement('button');
     b.className='btn-save'; b.textContent=done?'純練習':'開始測驗';
     b.onclick=startQuiz;
@@ -2178,10 +2199,15 @@ function buildQuizBox(){
     quizState.done?'測驗結束':('冷知識測驗　'+answered+' / '+quizState.qs.length)));
   if(quizState.done){
     const gain=quizState.score*QUIZ_PER;
+    const paid=quizState.paid||0;
     box.appendChild(elWith('div','qz-score',
       '答對 '+quizState.score+' / '+quizState.qs.length+
-      '　→　'+(done&&!gain?'':'+'+coin(gain))));
-    if(done)box.appendChild(elWith('div','qz-done','（今天已領過，這次不計獎金）'));
+      '　→　+'+coin(paid)));
+    if(gain&&!paid)box.appendChild(elWith('div','qz-done',
+      '（今天的 '+QUIZ_DAILY+' 次已經領完，這次不計獎金）'));
+    else if(paid)box.appendChild(elWith('div','lg-note',
+      '今天領了 '+quizTakenToday()+' / '+QUIZ_DAILY+' 次，共 '+
+      coin(quizGainToday())+'。'));
   }
   quizState.qs.forEach((q,i)=>{
     const my=quizState.answers[i];

@@ -1,6 +1,6 @@
 // 冷知識測驗與開盤台。
 //
-// ※ 測驗的分數是在瀏覽器算的，規則只保證「一天一次、一次最多 100」，
+// ※ 測驗的分數是在瀏覽器算的，規則只保證「一天三次、每次最多 100」，
 //   擋不住有人直接宣稱滿分。那是設計上已知的上限，不是這裡測得到的事。
 const {launch,openPage,seed,suite,ADMIN_UID}=require('./lib');
 const S=suite('冷知識測驗與開盤台');
@@ -155,12 +155,14 @@ const S=suite('冷知識測驗與開盤台');
     });
     await new Promise(r=>setTimeout(r,900));
     return {before,score:quizState.score,after:myWallet.balance,
-            day:myWallet.quizDay,gain:myWallet.quizGain,done:quizState.done};
+            day:myWallet.quizDay,gain:myWallet.quizGain,
+            count:myWallet.quizCount,done:quizState.done};
   });
   S.chk('答對 7 題就是 7 分', R7.score===7, R7.score);
   S.chk('一題 10 坂幣，7 題拿 70', R7.after-R7.before===70, R7.after-R7.before);
   S.chk('記下領取日', /^\d{4}-\d{2}-\d{2}$/.test(R7.day||''), R7.day);
-  S.chk('記下這次領多少', R7.gain===70, R7.gain);
+  S.chk('記下今天領了多少', R7.gain===70, R7.gain);
+  S.chk('記成今天的第 1 次', R7.count===1, R7.count);
   S.chk('答完自動結束', R7.done===true);
   S.chk('答錯的標紅、正解標綠',
         (await p.locator('.qz-opt.is-wrong').count())===3
@@ -170,19 +172,49 @@ const S=suite('冷知識測驗與開盤台');
   S.chk('看得到分數', (await p.locator('.qz-score').textContent()).includes('7 / 10'),
         await p.locator('.qz-score').textContent());
 
-  // 同一天再玩不再給錢
-  const R2=await p.evaluate(async()=>{
+  // 一天可以領三次（3×100＝300），第四次開始只能純練習
+  const play=()=>p.evaluate(async()=>{
     const before=myWallet.balance;
     startQuiz();
     quizState.qs.forEach((q,i)=>answerQuiz(i,q.answer));
     await new Promise(r=>setTimeout(r,900));
-    return {before,after:myWallet.balance,score:quizState.score};
+    return {before,after:myWallet.balance,score:quizState.score,
+            paid:quizState.paid,count:myWallet.quizCount,
+            dayGain:myWallet.quizGain};
   });
-  S.chk('同一天再玩還是算得出分數', R2.score===10, R2.score);
-  S.chk('但不會再給錢（一天一次）', R2.after===R2.before, R2.before+' → '+R2.after);
-  S.chk('有說明今天已經領過',
+  const R2=await play();
+  S.chk('第二次滿分照樣給錢', R2.after-R2.before===100, R2.after-R2.before);
+  S.chk('記成今天的第 2 次', R2.count===2, R2.count);
+  S.chk('今天累計 170（70＋100）', R2.dayGain===170, R2.dayGain);
+  const R3=await play();
+  S.chk('第三次還是給錢', R3.after-R3.before===100, R3.after-R3.before);
+  S.chk('記成今天的第 3 次', R3.count===3, R3.count);
+  S.chk('今天累計 270', R3.dayGain===270, R3.dayGain);
+  const R4=await play();
+  S.chk('第四次還是算得出分數', R4.score===10, R4.score);
+  S.chk('但第四次不給錢（一天三次）', R4.after===R4.before, R4.before+' → '+R4.after);
+  S.chk('第四次這份標記成沒領到', R4.paid===0, R4.paid);
+  S.chk('次數不會被加成 4', R4.count===3, R4.count);
+  S.chk('今天的累計沒有變', R4.dayGain===270, R4.dayGain);
+  S.chk('有說明今天已經領完',
         (await p.locator('.qz-done').first().textContent()).includes('不計獎金'),
         await p.locator('.qz-done').first().textContent());
+  S.chk('一天的上限是 300',
+        (await p.evaluate(()=>QUIZ_DAY_MAX))===300,
+        await p.evaluate(()=>QUIZ_DAY_MAX));
+  // 跨日就歸零
+  const roll=await p.evaluate(()=>{
+    const real=myWallet.quizDay;
+    myWallet.quizDay='2000-01-01';          // 假裝是很久以前領的
+    const r={taken:quizTakenToday(),done:quizDoneToday(),gain:quizGainToday()};
+    myWallet.quizDay=real; return r;
+  });
+  S.chk('跨到隔天次數與累計自動歸零',
+        roll.taken===0&&roll.done===false&&roll.gain===0, JSON.stringify(roll));
+  // 「今天」一律用台灣時間，不看裝置時區——規則那邊也是這樣算的
+  const tw=await p.evaluate(()=>today());
+  S.chk('今天的日期用台灣時間（UTC+8）算',
+        tw===new Date(Date.now()+8*3600*1000).toISOString().slice(0,10), tw);
   // 一題只能答一次
   const once=await p.evaluate(()=>{
     startQuiz();
