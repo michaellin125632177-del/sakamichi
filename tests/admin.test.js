@@ -54,7 +54,10 @@ const state=p=>p.evaluate(()=>({
   S.chk('別的帳號看不到卡片編輯鈕', s.editBtns===0, s.editBtns);
   S.chk('別的帳號按鈕不是綠色', !s.green, s.btn);
   S.chk('按鈕顯示人名而不是「登入」', /^👤/.test(s.btn)&&!/🔑/.test(s.btn), s.btn);
-  S.chk('提示說明沒有編輯權限', s.btnTitle.includes('沒有編輯權限'), s.btnTitle);
+  // 面板改成下注模式之後，一般玩家登入是為了下注而不是編輯，
+  // 所以提示改成講「你是誰、點了會登出」，不再提編輯權限。
+  S.chk('提示說明目前是誰、按了會登出',
+        s.btnTitle.includes('路人')&&s.btnTitle.includes('登出'), s.btnTitle);
   // 回歸測試：登入了卻不是管理員時，按鈕不能又去叫一次登入（會卡住登不出去）
   await p.evaluate(()=>{window.__signInCalls=0;window.__signOutCalls=0;});
   await p.click('#auth-btn'); await p.waitForTimeout(700);

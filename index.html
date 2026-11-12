@@ -1376,8 +1376,8 @@ function applyAuthUI(){
     b.title='點擊登出';
   } else if(authUser&&!authUser.isAnonymous){
     // 登入了但不是管理員：要講清楚，而且要讓他登得出去
-    b.textContent='👤 '+(authUser.displayName||authUser.email||'已登入');
-    b.title='已登入，但這個帳號沒有編輯權限。點擊登出';
+    b.textContent='👤 '+playerName();
+    b.title='已登入為「'+playerName()+'」。點擊登出';
   } else {
     b.textContent='🔑 登入';
     b.title='以 Google 登入後才能編輯';
@@ -1387,8 +1387,7 @@ function applyAuthUI(){
     box.innerHTML='';
     if(authUser){
       box.append(document.createTextNode(authUser.isAnonymous?'目前身分：':'目前登入：'),
-                 elWith('b',null,authUser.isAnonymous?'匿名（僅用於預測投票）'
-                                   :(authUser.email||authUser.displayName||'')),
+                 elWith('b',null,authUser.isAnonymous?'匿名':playerName()),
                  document.createElement('br'),
                  document.createTextNode('你的 UID：'),
                  elWith('code',null,authUser.uid));
@@ -1490,6 +1489,12 @@ async function idToEmail(id){
   return 'u'+hex.slice(0,32)+ID_DOMAIN;
 }
 function isPlayer(){return !!(authUser&&!authUser.isAnonymous);}
+// 畫面上一律顯示玩家自己取的名字。authUser.email 是 ID 雜湊出來的內部信箱
+// （u5906c390…@users…），給人看沒有意義，也不該洩漏內部格式。
+function playerName(){
+  if(!authUser)return '';
+  return (myWallet&&myWallet.name)||authUser.displayName||'玩家';
+}
 
 async function registerPlayer(id,pw){
   const name=cleanUserId(id);
@@ -1504,6 +1509,10 @@ async function registerPlayer(id,pw){
     if(e&&e.code==='auth/weak-password')throw new Error('密碼太短，至少 6 個字');
     throw e;
   }
+  // 寫進 Firebase 的 displayName：錢包快照還沒回來之前也有名字可顯示。
+  // 失敗了不影響註冊，錢包那邊一樣有名字。
+  try{ if(cred.user.updateProfile)await cred.user.updateProfile({displayName:name}); }
+  catch(e){}
   await db.collection(WALLET_COL).doc(cred.user.uid).set({
     name,balance:START_COIN,createdAt:Date.now()});
   return cred.user;
@@ -1535,6 +1544,7 @@ function watchWallet(){
   if(!db||!isPlayer()){renderPollIfOpen();return;}
   walletUnsub=db.collection(WALLET_COL).doc(authUser.uid).onSnapshot(d=>{
     myWallet=d.exists?d.data():null;
+    applyAuthUI();            // 名字要等錢包載進來才知道
     renderPollIfOpen();
   },err=>{console.warn('wallet',err);myWallet=null;renderPollIfOpen();});
 }
@@ -1838,9 +1848,7 @@ function buildVotePicker(p){
 function buildLoginBox(){
   const box=elWith('div','poll-card');
   box.appendChild(elWith('div','lg-title','下注前請先登入'));
-  box.appendChild(elWith('div','lg-note',
-    '取一組只有你知道的 ID 與密碼。不需要 email，也不會跟你要任何個人資料——'+
-    '這組帳號只是讓你換瀏覽器、換手機回來時，籌碼還認得你。'));
+  box.appendChild(elWith('div','lg-note','取一組只有你知道的 ID 與密碼。'));
   const id=document.createElement('input');
   id.type='text'; id.id='lg-id'; id.maxLength=16; id.placeholder='你的 ID（2～16 字）';
   const pw=document.createElement('input');
@@ -1866,7 +1874,7 @@ function buildLoginBox(){
   row.append(login,reg);
   box.append(id,pw,row);
   box.appendChild(elWith('div','lg-warn',
-    '⚠️ 沒有 email 就寄不了重設信，密碼忘了救不回來，請自己記好。'));
+    '⚠️ ID 跟密碼忘了救不回來，請自己記好。'));
   return box;
 }
 function buildWalletBox(){
