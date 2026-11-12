@@ -5,13 +5,15 @@
 const {launch,openPage,seed,suite,ADMIN_UID}=require('./lib');
 const S=suite('C 位預測');
 
+// 文件 id 現在每次建立都不一樣，所以一律回傳實際的 id 給測試用
 const mkPoll=(p,o={})=>p.evaluate(async o=>{
-  const g=o.g||'nogi', kind=o.kind||'sel';
-  await db.collection('polls').doc(pollId(g,o.num||44,kind)).set({
+  const g=o.g||'nogi', kind=o.kind||'sel', id=pollId(g,o.num||44,kind);
+  await db.collection('polls').doc(id).set({
     group:g,num:o.num||44,kind,title:o.title||'テスト曲',
     deadline:o.deadline||'',candidates:o.cands||pollCandidates(g),
     tally:o.tally||{},voteCount:o.voteCount||0,answer:o.answer||'',
     closed:!!o.closed,createdAt:Date.now()});
+  return id;
 },o);
 
 (async()=>{
@@ -68,7 +70,7 @@ const mkPoll=(p,o={})=>p.evaluate(async o=>{
         O.resolved===false, O.resolved);
 
   // ── 投票流程 ──
-  await mkPoll(p,{num:44});
+  const P44=await mkPoll(p,{num:44});
   await p.waitForTimeout(900);
   S.chk('按鈕顯示進行中的預測數',
         (await p.locator('#poll-btn').textContent()).includes('1'),
@@ -76,12 +78,12 @@ const mkPoll=(p,o={})=>p.evaluate(async o=>{
   await p.click('#poll-btn'); await p.waitForTimeout(600);
   S.chk('視窗打得開', (await p.locator('#pollModal.open').count())===1);
   S.chk('投票前看不到票數', (await p.locator('.pv').count())===0);
-  S.chk('投票前有候選下拉', (await p.locator('#pv-sel-nogi_44').count())===1);
-  const PH=await p.evaluate(()=>{
-    const o=document.querySelector('#pv-sel-nogi_44 option');
+  S.chk('投票前有候選下拉', (await p.locator('#pv-sel-'+P44).count())===1);
+  const PH=await p.evaluate(id=>{
+    const o=document.querySelector('#pv-sel-'+id+' option');
     return {hidden:o.hidden,disabled:o.disabled,value:o.value,
-            selected:document.querySelector('#pv-sel-nogi_44').value};
-  });
+            selected:document.querySelector('#pv-sel-'+id).value};
+  },P44);
   S.chk('提示選項不出現在展開的清單裡', PH.hidden===true);
   S.chk('提示選項選不到', PH.disabled===true);
   S.chk('一開始沒有預設選中任何成員（免得手滑送出不能改的票）',
@@ -89,66 +91,66 @@ const mkPoll=(p,o={})=>p.evaluate(async o=>{
   S.chk('沒選人時送出鈕是關的',
         await p.evaluate(()=>document.querySelector('.poll-pick .btn-save').disabled));
   S.chk('下拉不含已畢業成員',
-        !(await p.locator('#pv-sel-nogi_44').allTextContents())[0].includes('白石麻衣'));
+        !(await p.locator('#pv-sel-'+P44).allTextContents())[0].includes('白石麻衣'));
 
   await p.fill('#poll-nick','坂道老司機');
-  await p.selectOption('#pv-sel-nogi_44','賀喜遥香'); await p.waitForTimeout(200);
+  await p.selectOption('#pv-sel-'+P44,'賀喜遥香'); await p.waitForTimeout(200);
   await p.click('.poll-pick .btn-save'); await p.waitForTimeout(1200);
 
-  const V=await p.evaluate(()=>{
-    const pl=pollData.find(x=>x.id==='nogi_44');
+  const V=await p.evaluate(id=>{
+    const pl=pollData.find(x=>x.id===id);
     const v=Object.values(window.__store.votes)[0];
     return {tally:pl.tally,voteCount:pl.voteCount,vote:v,
             voteDocId:Object.keys(window.__store.votes)[0],
             bars:document.querySelectorAll('.pv-row').length,
-            stillPicker:document.querySelectorAll('#pv-sel-nogi_44').length,
+            stillPicker:document.querySelectorAll('#pv-sel-'+id).length,
             nickSaved:localStorage.getItem('sakamichi-nick')};
-  });
+  },P44);
   S.chk('票數累加到 1', V.tally['賀喜遥香']===1&&V.voteCount===1, JSON.stringify(V.tally));
   S.chk('票有寫進去', V.vote&&V.vote.pick==='賀喜遥香', JSON.stringify(V.vote));
   S.chk('票帶著暱稱', V.vote&&V.vote.nick==='坂道老司機', V.vote&&V.vote.nick);
   S.chk('票的 id 是 預測_uid（所以一人只佔得到一格）',
-        V.voteDocId==='nogi_44_'+ADMIN_UID, V.voteDocId);
+        V.voteDocId===P44+'_'+ADMIN_UID, V.voteDocId);
   S.chk('投完看得到票數', V.bars===1, V.bars);
   S.chk('投完就不能再投', V.stillPicker===0, V.stillPicker);
   S.chk('暱稱記在這台裝置上', V.nickSaved==='坂道老司機', V.nickSaved);
 
   // 第二票投別人，票數要分開累加
-  await p.evaluate(async()=>{
+  await p.evaluate(async id=>{
     const inc=firebase.firestore.FieldValue.increment(1);
     const batch=db.batch();
-    batch.set(db.collection('votes').doc('nogi_44_someone'),
-      {pollId:'nogi_44',uid:'someone',pick:'井上和',nick:'路人',at:Date.now()});
-    batch.update(db.collection('polls').doc('nogi_44'),
+    batch.set(db.collection('votes').doc(id+'_someone'),
+      {pollId:id,uid:'someone',pick:'井上和',nick:'路人',at:Date.now()});
+    batch.update(db.collection('polls').doc(id),
       new firebase.firestore.FieldPath('tally','井上和'),inc,
       new firebase.firestore.FieldPath('voteCount'),inc);
     await batch.commit();
-  });
+  },P44);
   await p.waitForTimeout(900);
-  const V2=await p.evaluate(()=>{
-    const pl=pollData.find(x=>x.id==='nogi_44');
+  const V2=await p.evaluate(id=>{
+    const pl=pollData.find(x=>x.id===id);
     return {tally:pl.tally,voteCount:pl.voteCount,
             bars:[...document.querySelectorAll('.pv-row')]
               .map(r=>r.querySelector('.pv-name').textContent.trim())};
-  });
+  },P44);
   S.chk('兩個人的票分開累加',
         V2.tally['賀喜遥香']===1&&V2.tally['井上和']===1&&V2.voteCount===2,
         JSON.stringify(V2.tally));
   S.chk('自己投的那個有星號', V2.bars.some(t=>t.startsWith('★')), V2.bars.join(' / '));
 
   // ── 開獎：單曲建好之後自動對答案 ──
-  const A=await p.evaluate(async()=>{
-    const before=pollAnswer(pollData.find(x=>x.id==='nogi_44'));
+  const A=await p.evaluate(async id=>{
+    const before=pollAnswer(pollData.find(x=>x.id===id));
     await db.collection('nogi').doc('44').set(toDoc({
       num:44,title:'テスト曲',zh:'測試',date:'2027年1月1日',total:3,
       center:['賀喜遥香'],rows:[[],[],['賀喜遥香','井上和','遠藤さくら']]}));
     return {before};
-  });
+  },P44);
   await p.waitForTimeout(1200);
-  const A2=await p.evaluate(()=>{
-    const pl=pollData.find(x=>x.id==='nogi_44');
+  const A2=await p.evaluate(id=>{
+    const pl=pollData.find(x=>x.id===id);
     return {answer:pollAnswer(pl),open:pollOpen(pl)};
-  });
+  },P44);
   S.chk('單曲還沒建好時沒有答案', A.before===null, A.before);
   S.chk('單曲的 center 一填就自動變成答案', A2.answer==='賀喜遥香', A2.answer);
   S.chk('開獎後預測自動關閉', A2.open===false);
@@ -161,7 +163,9 @@ const mkPoll=(p,o={})=>p.evaluate(async o=>{
   // ── 表題曲與 Under 曲各開各的 ──
   const K=await p.evaluate(()=>({
     selId:pollId('nogi',50,'sel'), underId:pollId('nogi',50,'under'),
-    oldId:pollId('nogi',50),
+    selKey:pollKey('nogi',50,'sel'), underKey:pollKey('nogi',50,'under'),
+    twice:[pollId('nogi',50,'sel'),pollId('nogi',50,'sel')],
+    keyOfLegacy:pollKeyOf({group:'nogi',num:50}),
     selKind:pollKind({kind:'sel'}), underKind:pollKind({kind:'under'}),
     legacy:pollKind({num:1}),
     selLabel:pollKindLabel({group:'nogi',kind:'sel'}),
@@ -171,16 +175,21 @@ const mkPoll=(p,o={})=>p.evaluate(async o=>{
   }));
   S.chk('表題與 Under 的 id 不一樣（同一張才能各開一個）',
         K.selId!==K.underId, K.selId+' vs '+K.underId);
-  S.chk('表題沿用舊的 id 格式（舊預測不會對不上）',
-        K.selId===K.oldId&&K.selId==='nogi_50', K.selId);
+  S.chk('表題與 Under 的唯一鍵不一樣', K.selKey!==K.underKey,
+        K.selKey+' vs '+K.underKey);
+  S.chk('同一個預測建兩次，id 不會一樣（刪掉重開才不會繼承舊狀態）',
+        K.twice[0]!==K.twice[1]||K.twice[0].length>K.selKey.length,
+        K.twice.join(' / '));
+  S.chk('沒有 kind 的舊預測，唯一鍵算成表題',
+        K.keyOfLegacy===K.selKey, K.keyOfLegacy);
   S.chk('沒有 kind 的舊預測當成表題曲', K.legacy==='sel', K.legacy);
   S.chk('表題曲的標籤', K.selLabel==='表題曲', K.selLabel);
   S.chk('乃木坂的 Under 叫 under 曲', K.underNogi==='under 曲', K.underNogi);
   S.chk('日向坂的 Under 叫ひなた坂', K.underHinata==='ひなた坂 曲', K.underHinata);
   S.chk('櫻坂的 Under 叫 BACKS', K.underSakura==='BACKS 曲', K.underSakura);
 
-  await mkPoll(p,{num:50,kind:'sel',title:'表題テスト'});
-  await mkPoll(p,{num:50,kind:'under',title:'アンダーテスト'});
+  const P50=await mkPoll(p,{num:50,kind:'sel',title:'表題テスト'});
+  const P50U=await mkPoll(p,{num:50,kind:'under',title:'アンダーテスト'});
   await p.waitForTimeout(1000);
   await p.evaluate(()=>buildPollList()); await p.waitForTimeout(400);
   const both=await p.evaluate(()=>[...document.querySelectorAll('.poll-card')]
@@ -201,9 +210,9 @@ const mkPoll=(p,o={})=>p.evaluate(async o=>{
     return true;
   });
   await p.waitForTimeout(1200);
-  const UA2=await p.evaluate(()=>({
-    sel:pollAnswer(pollData.find(x=>x.id==='nogi_50')),
-    under:pollAnswer(pollData.find(x=>x.id==='nogi_50_under'))}));
+  const UA2=await p.evaluate(ids=>({
+    sel:pollAnswer(pollData.find(x=>x.id===ids[0])),
+    under:pollAnswer(pollData.find(x=>x.id===ids[1]))}),[P50,P50U]);
   S.chk('表題的答案是單曲的 center', UA2.sel==='井上和', UA2.sel);
   S.chk('Under 的答案取 under 站位的正中央，不是 center',
         UA2.under==='伊藤理々杏', UA2.under);
@@ -214,26 +223,27 @@ const mkPoll=(p,o={})=>p.evaluate(async o=>{
   await p.evaluate(async()=>{
     for(const id of Object.keys(window.__store.polls))
       await db.collection('polls').doc(id).delete();
-    await db.collection('polls').doc('nogi_42').set({group:'nogi',num:42,kind:'sel',
+    await db.collection('polls').doc(pollId('nogi',42,'sel')).set({group:'nogi',num:42,kind:'sel',
       title:'已開獎A',deadline:'',candidates:['一ノ瀬美空','賀喜遥香','井上和'],
       tally:{'一ノ瀬美空':12,'賀喜遥香':7,'井上和':4},voteCount:23,
       answer:'',closed:false,createdAt:1});
-    await db.collection('polls').doc('nogi_41').set({group:'nogi',num:41,kind:'sel',
+    await db.collection('polls').doc(pollId('nogi',41,'sel')).set({group:'nogi',num:41,kind:'sel',
       title:'已開獎B',deadline:'',candidates:['池田瑛紗','賀喜遥香','遠藤さくら'],
       tally:{'池田瑛紗':9,'賀喜遥香':6,'遠藤さくら':3},voteCount:18,
       answer:'',closed:false,createdAt:2});
-    await db.collection('polls').doc('nogi_60').set({group:'nogi',num:60,kind:'sel',
+    window.__P60=pollId('nogi',60,'sel');
+    await db.collection('polls').doc(window.__P60).set({group:'nogi',num:60,kind:'sel',
       title:'進行中',deadline:'',candidates:pollCandidates('nogi'),
       tally:{'小川彩':5},voteCount:5,answer:'',closed:false,createdAt:3});
   });
   await p.waitForTimeout(1200);
   const R=await p.evaluate(()=>({
-    visible:visibleTallyPolls().map(x=>x.id).sort(),
+    visible:visibleTallyPolls().map(x=>x.num).sort(),
     rank:voteRanking(),
-    open60:pollOpen(pollData.find(x=>x.id==='nogi_60'))}));
+    open60:pollOpen(pollData.find(x=>x.id===window.__P60))}));
   S.chk('進行中的預測是開著的', R.open60===true);
   S.chk('只統計看得到票數的預測',
-        JSON.stringify(R.visible)==='["nogi_41","nogi_42"]', R.visible.join(','));
+        JSON.stringify(R.visible)==='[41,42]', R.visible.join(','));
   S.chk('進行中又沒投的票沒有洩漏出去',
         !R.rank.some(x=>x.name==='小川彩'), R.rank.map(x=>x.name).join(','));
   S.chk('跨預測的票加總起來',
@@ -264,14 +274,14 @@ const mkPoll=(p,o={})=>p.evaluate(async o=>{
   await p.evaluate(async()=>{
     const inc=firebase.firestore.FieldValue.increment(1);
     const batch=db.batch();
-    batch.set(db.collection('votes').doc('nogi_60_'+firebaseAuth.currentUser.uid),
-      {pollId:'nogi_60',uid:firebaseAuth.currentUser.uid,pick:'小川彩',
+    batch.set(db.collection('votes').doc(window.__P60+'_'+firebaseAuth.currentUser.uid),
+      {pollId:window.__P60,uid:firebaseAuth.currentUser.uid,pick:'小川彩',
        nick:'我',at:Date.now()});
-    batch.update(db.collection('polls').doc('nogi_60'),
+    batch.update(db.collection('polls').doc(window.__P60),
       new firebase.firestore.FieldPath('tally','小川彩'),inc,
       new firebase.firestore.FieldPath('voteCount'),inc);
     await batch.commit();
-    myVotes['nogi_60']={pick:'小川彩',nick:'我'};
+    myVotes[window.__P60]={pick:'小川彩',nick:'我'};
   });
   await p.waitForTimeout(900);
   const R2=await p.evaluate(()=>({
@@ -280,9 +290,63 @@ const mkPoll=(p,o={})=>p.evaluate(async o=>{
   S.chk('自己投過之後，那張預測就算進來了', R2.visible===3, R2.visible);
   S.chk('自己投的那票也進了排行', R2.ogawa&&R2.ogawa.votes===6, JSON.stringify(R2.ogawa));
 
+  // ── 刪掉再重開同一個預測（回歸）──
+  // 舊版的文件 id 固定是 {團}_{編號}，刪掉重開會沿用同一個 id，於是
+  // 新預測繼承了舊預測的狀態：畫面顯示「你投過了」其實沒投，而且
+  // 伺服器那邊舊的票還佔著 {id}_{uid} 擋住新的票。
+  await p.evaluate(async()=>{
+    for(const id of Object.keys(window.__store.polls))
+      await db.collection('polls').doc(id).delete();
+    myVotes={}; localStorage.removeItem('sakamichi-votes');
+  });
+  await p.waitForTimeout(600);
+  const D1=await mkPoll(p,{num:70,title:'第一次'});
+  await p.waitForTimeout(800);
+  await p.evaluate(async id=>{await castVote(id,'小川彩','我');},D1);
+  await p.waitForTimeout(800);
+  S.chk('投完之後本機記著這一票', await p.evaluate(id=>!!myVoteOn(id),D1));
+  await p.evaluate(async id=>{await db.collection('polls').doc(id).delete();},D1);
+  await p.waitForTimeout(800);
+  const D2=await mkPoll(p,{num:70,title:'重開的'});
+  await p.waitForTimeout(1000);
+
+  S.chk('刪掉重開會拿到不一樣的 id', D1!==D2, D1+' → '+D2);
+  S.chk('舊的那筆記錄被清掉了', await p.evaluate(id=>!myVoteOn(id),D1));
+  S.chk('新預測不會被誤認為投過', await p.evaluate(id=>!myVoteOn(id),D2));
+  await p.evaluate(()=>buildPollList()); await p.waitForTimeout(400);
+  S.chk('新預測看得到投票下拉', (await p.locator('#pv-sel-'+D2).count())===1);
+  S.chk('畫面沒有誤顯示「你投了」',
+        !(await p.locator('#poll-list').textContent()).includes('你投了'));
+  S.chk('舊的票不會佔住新預測的票位',
+        await p.evaluate(ids=>!window.__store.votes[ids[1]+'_'+
+          firebaseAuth.currentUser.uid],[D1,D2]));
+  // 新預測投得下去
+  await p.selectOption('#pv-sel-'+D2,'賀喜遥香'); await p.waitForTimeout(200);
+  await p.click('.poll-pick .btn-save'); await p.waitForTimeout(1200);
+  S.chk('重開之後投得下去',
+        await p.evaluate(id=>(pollData.find(x=>x.id===id).tally||{})['賀喜遥香']===1,D2));
+
+  // ── 本機記錄跟雲端對不上時會自我修復 ──
+  // 使用者現有的壞掉狀態就是這樣：預測還在、票數是空的，但本機記著投過。
+  const H=await mkPoll(p,{num:71,title:'票數是空的'});
+  await p.evaluate(id=>{
+    myVotes[id]={pick:'小川彩',nick:'我'};
+    localStorage.setItem('sakamichi-votes',JSON.stringify(myVotes));
+  },H);
+  S.chk('先造出對不上的狀態', await p.evaluate(id=>!!myVoteOn(id),H));
+  await p.evaluate(()=>reconcileMyVotes());
+  S.chk('票數是空的就代表沒投過，記錄被丟掉',
+        await p.evaluate(id=>!myVoteOn(id),H));
+  // 反面：票數對得上就不能亂丟
+  const H2=await mkPoll(p,{num:72,title:'真的投過',tally:{'賀喜遥香':3},voteCount:3});
+  await p.waitForTimeout(800);
+  await p.evaluate(id=>{myVotes[id]={pick:'賀喜遥香',nick:'我'};},H2);
+  await p.evaluate(()=>reconcileMyVotes());
+  S.chk('票數對得上的記錄要保留', await p.evaluate(id=>!!myVoteOn(id),H2));
+
   // ── 不把暱稱當 HTML ──
   await p.evaluate(async()=>{
-    await db.collection('polls').doc('nogi_45').set({
+    await db.collection('polls').doc(pollId('nogi',45,'sel')).set({
       group:'nogi',num:45,title:'<img src=x onerror="window.__pwned(1)">',
       deadline:'',candidates:['賀喜遥香'],
       tally:{'賀喜遥香':1},voteCount:1,answer:'',closed:true,createdAt:Date.now()});
@@ -304,7 +368,7 @@ const mkPoll=(p,o={})=>p.evaluate(async o=>{
       getBase(g).forEach(e=>batch.set(db.collection(g).doc(String(e.num)),toDoc({...e}))));
     await batch.commit();
   });
-  await mkPoll(p,{num:46});
+  const P46=await mkPoll(p,{num:46});
   await p.waitForTimeout(1200);
   const G=await p.evaluate(()=>({
     canEdit:canEdit(), guest:document.body.classList.contains('is-guest'),
@@ -316,17 +380,17 @@ const mkPoll=(p,o={})=>p.evaluate(async o=>{
   S.chk('訪客看得到預測', (await p.locator('.poll-card').count())>0);
   S.chk('訪客看不到管理按鈕', (await p.locator('.poll-admin').count())===0);
   await p.fill('#poll-nick','路過的');
-  await p.selectOption('#pv-sel-nogi_46','遠藤さくら'); await p.waitForTimeout(200);
+  await p.selectOption('#pv-sel-'+P46,'遠藤さくら'); await p.waitForTimeout(200);
   await p.click('.poll-pick .btn-save'); await p.waitForTimeout(1400);
   const GV=await p.evaluate(()=>({
     anonCalls:window.__anonCalls||0,
     vote:Object.values(window.__store.votes)[0],
     id:Object.keys(window.__store.votes)[0],
-    tally:pollData.find(x=>x.id==='nogi_46').tally,
+    tally:pollData.find(x=>x.num===46).tally,
     bars:document.querySelectorAll('.pv-row').length}));
   S.chk('投票時才建立匿名帳號', GV.anonCalls===1, GV.anonCalls);
   S.chk('匿名的票寫得進去', GV.vote&&GV.vote.pick==='遠藤さくら', JSON.stringify(GV.vote));
-  S.chk('匿名票的 id 用匿名 uid', /^nogi_46_anon-/.test(GV.id||''), GV.id);
+  S.chk('匿名票的 id 用匿名 uid', /_anon-/.test(GV.id||''), GV.id);
   S.chk('匿名投票也會累加票數', GV.tally['遠藤さくら']===1, JSON.stringify(GV.tally));
   S.chk('訪客投完也看得到票數', GV.bars===1, GV.bars);
   S.chk('匿名身分不會讓登入按鈕以為已登入',

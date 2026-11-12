@@ -1441,7 +1441,14 @@ const GROUP_NAME={nogi:'乃木坂46',hinata:'日向坂46',sakura:'櫻坂46',
                   keyaki:'欅坂46',aoba:'青葉坂46'};
 // 舊的預測沒有 kind 欄位，一律當成表題曲；id 也維持原本的格式，不會對不上
 function pollKind(p){return p&&p.kind==='under'?'under':'sel';}
-function pollId(g,num,kind){return g+'_'+num+(kind==='under'?'_under':'');}
+// 邏輯上的唯一鍵：一個團的一張單曲，表題與 Under 各只能有一個預測
+function pollKey(g,num,kind){return g+'_'+num+'_'+(kind==='under'?'under':'sel');}
+function pollKeyOf(p){return pollKey(p.group,p.num,pollKind(p));}
+// 文件 id 另外帶一段建立時間。刪掉再開一個同編號的預測時，id 會不一樣——
+// 這很重要，因為「我投過了」是記在瀏覽器裡、用 id 當鍵的，而票的文件 id
+// 也是 {預測id}_{uid}。id 若重複使用，新預測會繼承舊預測的狀態：
+// 畫面上顯示你投過了（其實沒有），伺服器那邊舊的票也還佔著位子擋住新的票。
+function pollId(g,num,kind){return pollKey(g,num,kind)+'_'+Date.now().toString(36);}
 function pollKindLabel(p){
   return pollKind(p)==='under'?(underLabel(p.group)+' 曲'):'表題曲';
 }
@@ -1525,6 +1532,20 @@ function loadMyVotes(){
   catch(e){myVotes={};}
 }
 function myVoteOn(pid){return myVotes[pid]||null;}
+// 本機記的「我投過了」有可能跟雲端對不上：預測被刪掉了，或是票數被重置。
+// 投票當下票與票數是同一個批次寫的，所以只要我投過某人，那個人的票數
+// 一定 ≥1；對不上就代表這筆記錄是舊的，丟掉讓他能重新投。
+function reconcileMyVotes(){
+  const live={}; pollData.forEach(p=>{live[p.id]=p;});
+  let changed=false;
+  Object.keys(myVotes).forEach(pid=>{
+    const p=live[pid], v=myVotes[pid];
+    const ok=p&&v&&((p.tally||{})[v.pick]>0);
+    if(!ok){delete myVotes[pid];changed=true;}
+  });
+  if(changed)try{localStorage.setItem('sakamichi-votes',JSON.stringify(myVotes));}
+             catch(e){}
+}
 
 // ── 畫面 ──
 function updatePollBadge(){
@@ -1732,7 +1753,7 @@ function openNewPoll(){
   if(k===null)return;
   const kind=String(k).trim()==='2'?'under':'sel';
   const id=pollId(g,n,kind);
-  if(pollData.some(x=>x.id===id)){
+  if(pollData.some(x=>pollKeyOf(x)===pollKey(g,n,kind))){
     showMsg('poll-msg','err','第'+n+'張的'+(kind==='under'?underLabel(g)+' 曲':'表題曲')+
             '已經有預測了。',false);return;}
   const title=prompt('曲名（還沒公布可以留空）','')||'';
@@ -2256,6 +2277,7 @@ if(db){
       ||String(a.group).localeCompare(b.group)
       ||pollKind(a).localeCompare(pollKind(b)));
     pollReady=true;
+    reconcileMyVotes();
     updatePollBadge();
     if(document.getElementById('pollModal').classList.contains('open'))buildPollList();
   },err=>{console.warn('polls',err);pollReady=true;updatePollBadge();});
