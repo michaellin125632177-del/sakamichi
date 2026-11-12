@@ -38,6 +38,21 @@ service cloud.firestore {
         && d.pick in get(/databases/$(database)/documents/polls/$(d.pollId)).data.candidates;
     }
 
+    // 測驗分數是在瀏覽器算的，規則沒辦法驗「你真的答對幾題」。
+    // 所以這裡能保證的只有：一天一次、一次最多 100。擋不住有人宣稱滿分，
+    // 但擋得住他把自己變成一億。這是這個設計已知的上限。
+    function isQuizClaim() {
+      let d = request.resource.data;
+      let old = resource.data;
+      return d.diff(old).affectedKeys().hasOnly(['balance', 'quizDay', 'quizGain'])
+          && d.quizDay is string
+          && old.get('quizDay', '') != d.quizDay      // 同一天只能領一次
+          && d.quizGain is int
+          && d.quizGain > 0
+          && d.quizGain <= 100
+          && d.balance == old.balance + d.quizGain;
+    }
+
     function isBetDeduction(uid) {
       let d = request.resource.data;
       let old = resource.data;
@@ -130,10 +145,10 @@ service cloud.firestore {
         && request.resource.data.balance == 1000
         && request.resource.data.name is string
         && request.resource.data.name.size() <= 16;
-      // 本人只能做一件事：扣掉剛剛那張注單的金額
+      // 本人只能做兩件事：扣掉剛剛那張注單的金額，或領一次測驗獎金
       allow update: if request.auth != null
         && request.auth.uid == uid
-        && isBetDeduction(uid);
+        && (isBetDeduction(uid) || isQuizClaim());
     }
 
     match /bets/{bid} {

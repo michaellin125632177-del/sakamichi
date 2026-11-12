@@ -12,6 +12,30 @@ const S=suite('整體煙霧測試');
   });
   await seed(p);
 
+  // 改大塊程式時曾經整段取代，順手把中間幾個函式一起刪掉（pollOpen、
+  // cleanNick、voteId），而因為它們是在事件裡才被呼叫，所有測試都沒抓到。
+  // 這裡直接點名核心函式，少一個就立刻紅。
+  const CORE=['getData','getBase','getAllMembers','activeAt','lineupOf','lineupDiff',
+    'tenureMap','mergeSpans','careerStats','memberTrajectory','underRowsOf',
+    'centerOfRows','underLabel','selCountOf','elWith','showMsg','openModal',
+    'closeModal','canEdit','playerName','cleanNick','cleanUserId','voteId',
+    'pollId','pollKey','pollKeyOf','pollType','pollOpen','pollAnswer','pollTally',
+    'pollCandidates','pollCandsFor','pollKindLabel','pollHistory','historyStats',
+    'crowdPick','hitBy','settleShares','settlePoll','placeBet','registerPlayer',
+    'loginPlayer','ensureWallet','idToEmail','buildQuiz','startQuiz','answerQuiz',
+    'finishQuiz','buildPollList','buildPollCard','buildNewPollForm','buildHistory',
+    'buildRankTable','compositionOf','singleDate','toDoc','fromDoc'];
+  const missing=await p.evaluate(names=>names.filter(n=>{
+    try{ return typeof eval(n)!=='function'; }catch(e){ return true; }
+  }),CORE);
+  S.chk('核心函式一個都沒少', missing.length===0, missing.join(','));
+  const consts=await p.evaluate(()=>{
+    const want=['ALL_GROUPS','GROUP_NAME','BET_TYPES','POLL_COL','WALLET_COL',
+                'BET_COL','START_COIN','QUIZ_N','QUIZ_PER','NICK_MAX','ADMIN_UIDS'];
+    return want.filter(n=>{try{return eval(n)===undefined;}catch(e){return true;}});
+  });
+  S.chk('核心常數一個都沒少', consts.length===0, consts.join(','));
+
   for(const g of ['nogi','hinata','sakura','keyaki'])
     S.chk('『'+g+'』有卡片', (await p.locator('#'+g+'-grid .card').count())>0,
           await p.locator('#'+g+'-grid .card').count());

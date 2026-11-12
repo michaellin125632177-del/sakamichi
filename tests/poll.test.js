@@ -43,13 +43,13 @@ const mkPoll=(p,o={})=>p.evaluate(async o=>{
   const N=await p.evaluate(()=>({
     trim:cleanNick('  阿坂  '),
     ctrl:cleanNick('壞\u0000人\u001f'),
-    long:cleanNick('一'.repeat(40)).length,
+    long:cleanNick('一'.repeat(80)).length,
     empty:cleanNick(null),
     html:cleanNick('<img src=x>')
   }));
   S.chk('暱稱去頭尾空白', N.trim==='阿坂', N.trim);
   S.chk('暱稱濾掉控制字元', N.ctrl==='壞人', N.ctrl);
-  S.chk('暱稱截到 16 字', N.long===16, N.long);
+  S.chk('曲名截到 60 字', N.long===60, N.long);
   S.chk('空暱稱不會爆', N.empty==='', JSON.stringify(N.empty));
   S.chk('暱稱不改寫內容（靠 textContent 防注入，不是靠過濾）',
         N.html==='<img src=x>', N.html);
@@ -167,9 +167,9 @@ const mkPoll=(p,o={})=>p.evaluate(async o=>{
 
   // ── 表題曲與 Under 曲各開各的 ──
   const K=await p.evaluate(()=>({
-    selId:pollId('nogi',50,'sel'), underId:pollId('nogi',50,'under'),
-    selKey:pollKey('nogi',50,'sel'), underKey:pollKey('nogi',50,'under'),
-    twice:[pollId('nogi',50,'sel'),pollId('nogi',50,'sel')],
+    selId:pollId('nogi',50,'center'), underId:pollId('nogi',50,'undercenter'),
+    selKey:pollKey('nogi',50,'center'), underKey:pollKey('nogi',50,'undercenter'),
+    twice:[pollId('nogi',50,'center'),pollId('nogi',50,'center')],
     keyOfLegacy:pollKeyOf({group:'nogi',num:50}),
     selKind:pollKind({kind:'sel'}), underKind:pollKind({kind:'under'}),
     legacy:pollKind({num:1}),
@@ -188,10 +188,10 @@ const mkPoll=(p,o={})=>p.evaluate(async o=>{
   S.chk('沒有 kind 的舊預測，唯一鍵算成表題',
         K.keyOfLegacy===K.selKey, K.keyOfLegacy);
   S.chk('沒有 kind 的舊預測當成表題曲', K.legacy==='sel', K.legacy);
-  S.chk('表題曲的標籤', K.selLabel==='表題曲', K.selLabel);
-  S.chk('乃木坂的 Under 叫 under 曲', K.underNogi==='under 曲', K.underNogi);
-  S.chk('日向坂的 Under 叫ひなた坂', K.underHinata==='ひなた坂 曲', K.underHinata);
-  S.chk('櫻坂的 Under 叫 BACKS', K.underSakura==='BACKS 曲', K.underSakura);
+  S.chk('表題曲的標籤', K.selLabel==='表題曲 C 位', K.selLabel);
+  S.chk('乃木坂的 Under 叫 under 曲', K.underNogi==='under 曲 C 位', K.underNogi);
+  S.chk('日向坂的 Under 叫ひなた坂', K.underHinata==='ひなた坂 曲 C 位', K.underHinata);
+  S.chk('櫻坂的 Under 叫 BACKS', K.underSakura==='BACKS 曲 C 位', K.underSakura);
 
   const P50=await mkPoll(p,{num:50,kind:'sel',title:'表題テスト'});
   const P50U=await mkPoll(p,{num:50,kind:'under',title:'アンダーテスト'});
