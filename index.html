@@ -1673,12 +1673,22 @@ const QUIZ_MAKERS=[
     const ans=pick(same);
     return {q:'下面哪一位跟 '+n+' 同期？',
       answer:ans, options:shuffle([ans,...distract(other,'',3)])};},
-  // 生日年份
+  // 年齡：問誰最年長／最年輕。直接問哪一年出生等於背數字，太硬。
+  // 四個人生日太接近也等於擲骰子，所以最極端的那位要跟第二名差半年以上。
   g=>{const all=getAllMembers(g);
     const names=Object.keys(all).filter(n=>all[n].bday);
-    const n=pick(names); if(!n)return null;
-    const pool=[...new Set(names.map(x=>all[x].bday.slice(0,4)+'年'))];
-    return mkQ(n+' 是哪一年出生的？', all[n].bday.slice(0,4)+'年', pool);},
+    if(names.length<4)return null;
+    const oldest=Math.random()<0.5;
+    for(let t=0;t<20;t++){
+      const four=shuffle(names).slice(0,4);
+      const ds=four.map(x=>all[x].bday).sort();   // 'YYYY-MM-DD' 字典序＝時間序
+      const a=oldest?ds[0]:ds[3], b=oldest?ds[1]:ds[2];
+      if(Math.abs(new Date(a)-new Date(b))<180*864e5)continue;
+      return {q:'下面四位 '+(GROUP_NAME[g]||g)+' 成員，'+
+                 (oldest?'最年長':'最年輕')+'的是誰？',
+        answer:four.find(x=>all[x].bday===a), options:shuffle(four)};
+    }
+    return null;},
   // 入團年份
   g=>{const all=getAllMembers(g);
     const names=Object.keys(all).filter(n=>all[n].joined);
@@ -1693,15 +1703,6 @@ const QUIZ_MAKERS=[
     const pool=[...new Set(names.map(x=>all[x].grad.slice(0,4)+'年'))];
     return mkQ(n+' 是哪一年從 '+(GROUP_NAME[g]||g)+' 畢業的？',
       all[n].grad.slice(0,4)+'年', pool);},
-  // 誰在籍比較久（已畢業的，數字固定不會隨時間變）
-  g=>{const t=tenureMap();
-    const all=getAllMembers(g);
-    const names=Object.keys(all).filter(n=>t[n]&&!t[n].active);
-    if(names.length<4)return null;
-    const four=shuffle(names).slice(0,4);
-    const top=four.reduce((a,b)=>t[b].days>t[a].days?b:a);
-    return {q:'下面四位在 '+(GROUP_NAME[g]||g)+' 系列待得最久的是誰？',
-      answer:top,options:shuffle(four)};},
   // 出身地（目前只有現役成員有這筆資料，沒有的人不會被抽到）
   g=>{const all=getAllMembers(g);
     const names=Object.keys(all).filter(n=>all[n].home);
