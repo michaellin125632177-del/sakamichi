@@ -86,7 +86,7 @@ const S=suite('整體煙霧測試');
               r.querySelector('.mp-val').textContent);
     openMemberPanel('nogi','井上和');
     const cur=read();
-    openMemberPanel('nogi','秋元真夏');       // 已畢業，沒有這三筆資料
+    openMemberPanel('nogi','岩瀬佑美子');     // 名冊裡沒有這三筆資料的人
     const old=read();
     return {cur,old};
   });
